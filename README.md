@@ -43,6 +43,14 @@ clinch you can **throw** (knockdown) or, from behind, **choke** (a gradual drain
 fighter can press grab/counter to **break free** or, with good timing, **reverse** it. No strikes
 on a downed opponent.
 
+## Stages
+
+Each fight cycles to the next of four arenas, in order: **Underground Dojo** (brick basement,
+calligraphy scrolls, swaying heavy bags, tatami), **Rooftop Cage** (neon skyline, chain-link fence,
+rain), **Bamboo Grove** (swaying stalks, stone lanterns, drifting autumn leaves), and the
+**World Combat Arena** (lit ring, camera flashes; winners get a 優勝 flourish). Decor is drawn
+procedurally — no image assets.
+
 ## Adding a character
 
 Every fighter is one object in the `CHARACTERS` array near the top of `index.html`. Copy an

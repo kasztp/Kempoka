@@ -60,7 +60,7 @@ const CHARACTERS = [
   { id:'dori', name:'Dori', belt:'#e8c33a', outfit:'gi', gi:'#f4eee0',
     build:{scale:0.94,girth:0.9}, skin:'#f0c39c', hair:{color:'#b3401a',style:'braid'}, beard:false,
     stats:{maxHp:96,speed:1.32,power:0.86,defense:0.96},
-    special:{name:'Mawashi', type:'spin'} },
+    special:{name:'Mawashi Geri', type:'spin'} },
 ];
 
 // ---------- Move tables ------------------------------------------------------
@@ -458,13 +458,72 @@ function drawBtn(b){ ctx.save(); ctx.fillStyle=b.active?GOLD:'rgba(245,168,0,.12
 function roundRect(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
 function hit(b,p){ return p.x>=b.x&&p.x<=b.x+b.w&&p.y>=b.y&&p.y<=b.y+b.h; }
 
-function bg(){ // dojo
-  ctx.fillStyle=INK; ctx.fillRect(0,0,W,H);
-  const grd=ctx.createLinearGradient(0,0,0,GROUND); grd.addColorStop(0,'#241f14'); grd.addColorStop(1,'#171410'); ctx.fillStyle=grd; ctx.fillRect(0,0,W,GROUND);
-  ctx.strokeStyle='rgba(245,168,0,.12)'; ctx.lineWidth=1; for(let i=1;i<8;i++){ ctx.beginPath(); ctx.moveTo(i*W/8,120); ctx.lineTo(i*W/8,GROUND); ctx.stroke(); }
-  ctx.fillStyle='#3a2f1c'; ctx.fillRect(0,GROUND,W,H-GROUND); // mat
-  ctx.strokeStyle='rgba(245,168,0,.25)'; ctx.lineWidth=2; ctx.strokeRect(30,GROUND+6,W-60,H-GROUND-14);
-  drawWatermark(W-70,H-58,44,0.12);
+// ---------- Stages (cycle sequentially, one per fight) -----------------------
+let stageIndex=0, matchCount=0;
+const STAGE_NAMES=['Underground Dojo','Rooftop Cage','Bamboo Grove','World Combat Arena'];
+function rng(seed){ return ()=>{ seed=(seed*1103515245+12345)&0x7fffffff; return seed/0x7fffffff; }; }
+const DECOR=(()=>{                                        // precomputed so decor doesn't jitter each frame
+  let r=rng(3); const buildings=[]; let x=-30; while(x<W+40){ const bw=46+r()*74, bh=110+r()*230; buildings.push({x,w:bw,top:GROUND-bh}); x+=bw+6+r()*22; }
+  r=rng(31); const stars=[]; for(let i=0;i<90;i++) stars.push({x:r()*W, y:16+r()*170, ph:r()*6.28});
+  r=rng(19); const leaves=[]; for(let i=0;i<80;i++) leaves.push({x:r()*W, y:GROUND+8+r()*(H-GROUND-16), rot:r()*6.28, red:r()>0.5, s:4+r()*5});
+  r=rng(11); const bamboo=[]; for(let i=0;i<9;i++) bamboo.push({x:50+i*104+r()*28, w:9+r()*9, ph:r()*6.28, top:120+r()*90});
+  r=rng(23); const drift=[]; for(let i=0;i<14;i++) drift.push({x:r()*W, y:r()*GROUND, rot:r()*6.28, red:r()>0.5, sp:20+r()*30, ph:r()*100});
+  return {buildings,stars,leaves,bamboo,drift};
+})();
+const now=()=>performance.now()/1000;
+function vignette(){ const v=ctx.createRadialGradient(W/2,GROUND*0.5,120,W/2,GROUND*0.5,W*0.7); v.addColorStop(0,'rgba(0,0,0,0)'); v.addColorStop(1,'rgba(0,0,0,0.55)'); ctx.fillStyle=v; ctx.fillRect(0,0,W,GROUND); }
+
+function stageDojo(){ const t=now();                      // 1) Underground Dojo — dim concrete, brick, scrolls, heavy bags, tatami
+  const g=ctx.createLinearGradient(0,0,0,GROUND); g.addColorStop(0,'#221f1c'); g.addColorStop(1,'#131110'); ctx.fillStyle=g; ctx.fillRect(0,0,W,GROUND);
+  ctx.strokeStyle='rgba(120,90,70,.12)'; ctx.lineWidth=1;
+  for(let y=40;y<GROUND;y+=26){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+    const off=((y/26)|0)%2?26:0; for(let x=off;x<W;x+=52){ ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x,y+26); ctx.stroke(); } }
+  [180,740].forEach(sx=>{ ctx.fillStyle='#d9cdb0'; ctx.fillRect(sx,50,46,150); ctx.fillStyle='#9c4227'; ctx.fillRect(sx-3,44,52,8); ctx.fillRect(sx-3,196,52,8);
+    ctx.fillStyle='#2a2018'; ctx.font='bold 30px serif'; ctx.textAlign='center'; ctx.fillText('拳',sx+23,102); ctx.fillText('法',sx+23,148); });
+  [360,600].forEach((bx,k)=>{ const sw=Math.sin(t*1.1+k*2)*0.12; ctx.save(); ctx.translate(bx,140); ctx.rotate(sw);
+    ctx.strokeStyle='#3a2f24'; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(0,-46); ctx.lineTo(0,0); ctx.stroke();
+    ctx.fillStyle='#4a3423'; roundRect(-16,0,32,120,10); ctx.fill(); ctx.fillStyle='rgba(0,0,0,.28)'; ctx.fillRect(-16,38,32,4); ctx.fillRect(-16,80,32,4); ctx.restore(); });
+  ctx.fillStyle='#5f5d3f'; ctx.fillRect(0,GROUND,W,H-GROUND);
+  ctx.strokeStyle='rgba(0,0,0,.28)'; ctx.lineWidth=2; for(let x=0;x<=W;x+=96) ctx.strokeRect(x,GROUND+2,96,H-GROUND-4);
+  vignette();
+}
+function stageRooftop(){ const t=now();                   // 2) Rooftop Cage — neon skyline, fence, rain, wet floor
+  const g=ctx.createLinearGradient(0,0,0,GROUND); g.addColorStop(0,'#0a1120'); g.addColorStop(1,'#1a2236'); ctx.fillStyle=g; ctx.fillRect(0,0,W,GROUND);
+  DECOR.buildings.forEach((b,bi)=>{ ctx.fillStyle='#0e1524'; ctx.fillRect(b.x,b.top,b.w,GROUND-b.top);
+    for(let wy=b.top+10; wy<GROUND-6; wy+=16) for(let wx=b.x+6; wx<b.x+b.w-6; wx+=14)
+      if(((wx*3+wy*7+bi*5)>>2)%5!==0){ ctx.fillStyle=['#ffd36b','#7be0ff','#ff7bd0'][((wx+wy+bi)>>1)%3]; ctx.globalAlpha=0.5; ctx.fillRect(wx,wy,7,9); ctx.globalAlpha=1; } });
+  ctx.fillStyle='rgba(120,60,180,.14)'; ctx.fillRect(0,GROUND-60,W,60);
+  ctx.strokeStyle='rgba(185,195,205,.10)'; ctx.lineWidth=1;
+  for(let x=-GROUND;x<W;x+=22){ ctx.beginPath(); ctx.moveTo(x,80); ctx.lineTo(x+GROUND-80,GROUND); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x+GROUND-80,80); ctx.lineTo(x,GROUND); ctx.stroke(); }
+  ctx.fillStyle='#20242a'; ctx.fillRect(0,GROUND,W,H-GROUND); ctx.fillStyle='rgba(120,150,180,.06)'; ctx.fillRect(0,GROUND,W,10);
+  ctx.strokeStyle='rgba(175,195,225,.22)'; ctx.lineWidth=1;
+  for(let i=0;i<120;i++){ const rx=(i*137 + t*900)%W, ry=(i*53 + t*900)%GROUND; ctx.beginPath(); ctx.moveTo(rx,ry); ctx.lineTo(rx-6,ry+16); ctx.stroke(); }
+}
+function stageBamboo(){ const t=now();                    // 3) Bamboo Grove — swaying stalks, stone lanterns, autumn leaves
+  const g=ctx.createLinearGradient(0,0,0,GROUND); g.addColorStop(0,'#3a3320'); g.addColorStop(1,'#241d12'); ctx.fillStyle=g; ctx.fillRect(0,0,W,GROUND);
+  DECOR.bamboo.forEach(b=>{ const sway=Math.sin(t*0.8+b.ph)*6; ctx.strokeStyle='#556b34'; ctx.lineWidth=b.w; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(b.x,GROUND); ctx.lineTo(b.x+sway,b.top); ctx.stroke();
+    ctx.strokeStyle='rgba(30,40,20,.5)'; ctx.lineWidth=2; for(let sy=GROUND-20;sy>b.top;sy-=44){ const f=(GROUND-sy)/(GROUND-b.top); ctx.beginPath(); ctx.moveTo(b.x+sway*f-b.w/2,sy); ctx.lineTo(b.x+sway*f+b.w/2,sy); ctx.stroke(); } });
+  [110,850].forEach(lx=>{ ctx.fillStyle='#6b6b63'; ctx.fillRect(lx-14,GROUND-70,28,10); ctx.fillRect(lx-18,GROUND-60,36,8);
+    ctx.fillStyle='#8a8a80'; ctx.fillRect(lx-12,GROUND-52,24,20); ctx.fillStyle='#ffcf7a'; ctx.fillRect(lx-6,GROUND-48,12,12); ctx.fillStyle='#6b6b63'; ctx.fillRect(lx-10,GROUND-30,20,30); });
+  ctx.fillStyle='#43331f'; ctx.fillRect(0,GROUND,W,H-GROUND);
+  DECOR.leaves.forEach(l=>{ ctx.save(); ctx.translate(l.x,l.y); ctx.rotate(l.rot); ctx.fillStyle=l.red?'#b3401a':'#d9a531'; ctx.beginPath(); ctx.ellipse(0,0,l.s,l.s*0.5,0,0,7); ctx.fill(); ctx.restore(); });
+  DECOR.drift.forEach(d=>{ const dy=(d.y+t*d.sp)%GROUND, dx=d.x+Math.sin(t*0.8+d.ph)*30; ctx.save(); ctx.translate(dx,dy); ctx.rotate(d.rot+t); ctx.globalAlpha=0.8; ctx.fillStyle=d.red?'#b3401a':'#d9a531'; ctx.beginPath(); ctx.ellipse(0,0,6,3,0,0,7); ctx.fill(); ctx.restore(); ctx.globalAlpha=1; });
+}
+function stageArena(){ const t=now();                     // 4) World Combat Arena — dark stadium, camera flashes, spotlight, ring
+  ctx.fillStyle='#0b0b0f'; ctx.fillRect(0,0,W,GROUND);
+  ctx.fillStyle='#141420'; ctx.fillRect(0,60,W,GROUND-60);
+  DECOR.stars.forEach((s,i)=>{ if(Math.sin(t*9+s.ph)+Math.sin(t*13+i)>1.6){ ctx.globalAlpha=0.9; ctx.fillStyle='#fff'; ctx.fillRect(s.x,s.y+60,3,3); } }); ctx.globalAlpha=1;
+  const sp=ctx.createRadialGradient(W/2,-60,60,W/2,GROUND,W*0.75); sp.addColorStop(0,'rgba(255,250,230,.20)'); sp.addColorStop(1,'rgba(255,250,230,0)'); ctx.fillStyle=sp; ctx.fillRect(0,0,W,GROUND);
+  ctx.strokeStyle='#c33'; ctx.lineWidth=4; [GROUND-96,GROUND-64,GROUND-32].forEach(ry=>{ ctx.beginPath(); ctx.moveTo(40,ry); ctx.lineTo(W-40,ry); ctx.stroke(); });
+  ctx.fillStyle='#e8e2d0'; ctx.fillRect(34,GROUND-104,10,104); ctx.fillRect(W-44,GROUND-104,10,104);
+  ctx.fillStyle='#c9c0a8'; ctx.fillRect(0,GROUND,W,H-GROUND); ctx.strokeStyle='rgba(180,40,40,.5)'; ctx.lineWidth=3; ctx.strokeRect(24,GROUND+8,W-48,H-GROUND-18);
+}
+const STAGES=[stageDojo, stageRooftop, stageBamboo, stageArena];
+function bg(){ ctx.fillStyle=INK; ctx.fillRect(0,0,W,H);
+  STAGES[stageIndex % STAGES.length]();
+  ctx.strokeStyle='rgba(245,168,0,.20)'; ctx.lineWidth=2; ctx.strokeRect(30,GROUND+6,W-60,H-GROUND-14);
+  drawWatermark(W-70,H-58,44,0.10);
 }
 function drawWatermark(cx,cy,r,alpha){ if(!logoOk) return; ctx.save(); ctx.globalAlpha=alpha; ctx.beginPath(); ctx.arc(cx,cy,r,0,7); ctx.clip(); ctx.drawImage(logo,cx-r,cy-r,r*2,r*2); ctx.restore(); }
 
@@ -556,10 +615,12 @@ function chooseFighter(idx){ Audio.sfx('click');
 
 // ---- fight ----
 function startFight(){ state='fight';
+  stageIndex = matchCount % STAGES.length; matchCount++;   // next stage in sequence, one per fight
   F[0]=makeFighter(CHARACTERS[sel[0]],0,W*0.32);
   F[1]=makeFighter(CHARACTERS[sel[1]],1,W*0.68);
-  roundTimer=ROUND_TIME; matchOver=false; koFreeze=0; Audio.startMusic(); Audio.sfx('bell');
+  roundTimer=ROUND_TIME; matchOver=false; koFreeze=0; introTimer=2.0; Audio.startMusic(); Audio.sfx('bell');
 }
+let introTimer=0;
 function newRound(){ const w=[F[0].wins,F[1].wins];
   F[0]=Object.assign(makeFighter(F[0].char,0,W*0.32),{wins:w[0]});
   F[1]=Object.assign(makeFighter(F[1].char,1,W*0.68),{wins:w[1]});
@@ -569,6 +630,7 @@ function endRound(winSide){ koFreeze=1.4; if(winSide>=0){ F[winSide].wins++; }
 }
 function updateFight(){
   if(koFreeze>0){ koFreeze-=DT; F.forEach(f=>{ f.anim+=DT; physics(f); }); if(koFreeze<=0){ if(matchOver){ state='result'; Audio.sfx('win'); } else newRound(); } return; }
+  if(introTimer>0) introTimer-=DT;
   roundTimer-=DT;
   const in0=readInput(0), in1 = (mode==='1p')?aiInput(F[1]):readInput(1);
   updateFighter(F[0],in0); updateFighter(F[1],in1);
@@ -581,7 +643,8 @@ function drawFight(){
   // draw back-to-front by x depth (taller/closer last is fine; keep simple)
   [F[0],F[1]].forEach(drawFighter);
   drawHUD();
-  if(koFreeze>0 && matchOver){}
+  if(introTimer>0){ ctx.globalAlpha=Math.min(1,introTimer); ctx.fillStyle=GOLD; ctx.font='italic bold 30px "Trebuchet MS"'; ctx.textAlign='center';
+    ctx.fillText(STAGE_NAMES[stageIndex],W/2,150); ctx.globalAlpha=1; }
   if(koFreeze>0){ ctx.fillStyle=GOLD; ctx.font='bold 60px "Trebuchet MS"'; ctx.textAlign='center';
     ctx.fillText(roundTimer<=0&&!(F[0].hp<=0||F[1].hp<=0)?'TIME':'K.O.',W/2,H/2); }
   // clinch prompt
@@ -613,6 +676,7 @@ function drawHUD(){
 function drawResult(){
   buttons=[]; bg2();
   const wf=F[winner];
+  if(stageIndex===3){ ctx.fillStyle='rgba(245,168,0,.9)'; ctx.textAlign='center'; ctx.font='bold 56px serif'; ctx.fillText('優勝',W/2,72); } // Arena grand-stage flourish
   ctx.fillStyle=GOLD; ctx.textAlign='center'; ctx.font='bold 44px "Trebuchet MS"';
   ctx.fillText((mode==='2p'?('PLAYER '+(winner+1)):(winner===0?'YOU WIN':'YOU LOSE')),W/2,120);
   ctx.font='bold 28px "Trebuchet MS"'; ctx.fillStyle='#d8c9a0'; ctx.fillText(wf.char.name+' — '+wf.char.special.name,W/2,160);
