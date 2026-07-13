@@ -21,7 +21,14 @@ python3 -m http.server 8000   # then visit http://localhost:8000
 `2` kick · `3` block · `0` special · `4` grab / counter
 
 **Touch:** on-screen pad (move/jump/crouch) + action buttons appear automatically on touch
-devices. Touch drives Player 1 (vs CPU).
+devices (during a fight). Touch drives Player 1 (vs CPU). On a desktop you can preview them via
+**Controls → Touch buttons: ON**.
+
+**Aiming & air attacks:** hold ◄/► while pressing an attack to strike that way; with no direction
+held you automatically face the opponent. Punches and kicks work in mid-air — blocks, grabs,
+throws and chokes are ground-only.
+
+The in-game **Controls** screen (main menu) lists everything.
 
 ## Grappling (Zen Bu Kan Kempo rules)
 

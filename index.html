@@ -123,9 +123,10 @@ const KEYMAP={KeyA:1,KeyD:1,KeyW:1,KeyS:1,KeyJ:1,KeyK:1,KeyL:1,KeyU:1,KeyI:1,
 addEventListener('keydown',e=>{ if(KEYMAP[e.code]) e.preventDefault(); keys.add(e.code); Audio.ensure(); });
 addEventListener('keyup',e=>keys.delete(e.code));
 const touch={};
+let touchMode = localStorage.kmp_touch || 'auto';   // 'auto' | 'on' | 'off'
+function touchAuto(){ try{ return matchMedia('(pointer: coarse)').matches; }catch(e){ return ('ontouchstart' in window)||navigator.maxTouchPoints>0; } }
+function wantTouch(){ return touchMode==='on' || (touchMode==='auto' && touchAuto()); }
 function bindTouch(){
-  const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints>0;
-  if(isTouch) document.getElementById('touch').classList.add('on');
   document.querySelectorAll('.tbtn').forEach(el=>{
     const k=el.dataset.k;
     const on=e=>{ e.preventDefault(); touch[k]=true; Audio.ensure(); };
@@ -170,15 +171,18 @@ function makeFighter(char,side,x){
     anim:0, cleaver:0, prev:{} };
 }
 function opp(f){ return f===F[0]?F[1]:F[0]; }
+// strike direction: held direction key wins, else auto-face the opponent
+function attackFacing(f,inp){ if(inp.left&&!inp.right) return -1; if(inp.right&&!inp.left) return 1; return f.x<=opp(f).x?1:-1; }
 
-function startAction(f,move,extra){
-  if(f.grab||f.down>0||f.stun>0||!f.onGround||f.action) return false;
+function startAction(f,move,extra){   // punch/kick allowed airborne; grab/block/throw are gated elsewhere to ground/clinch
+  if(f.grab||f.down>0||f.stun>0||f.action) return false;
   f.action={ move, t:0, dur:move.dur, hit:false, ...(extra||{}) };
   f.blocking=false;
   return true;
 }
-function doSpecial(f){
-  if(f.cool.special>0) return;
+function doSpecial(f,dir){
+  if(f.cool.special>0 || !f.onGround) return;   // specials are ground-only (no air clinch/throw)
+  if(dir) f.facing=dir;
   const t=f.char.special.type, o=opp(f);
   if(t==='cleaver'){ if(f.hp <= f.char.stats.maxHp*0.30){ f.cleaver=6; f.cool.special=3; Audio.sfx('grab'); } return; }
   f.cool.special=3;
@@ -234,7 +238,7 @@ function pressed(f,inp,key){ const p=f.prev[key]; f.prev[key]=inp[key]; return i
 function updateFighter(f,inp){
   // face opponent when free
   const o=opp(f);
-  if(!f.action && !f.grab && f.onGround && f.down===0) f.facing = f.x<=o.x?1:-1;
+  if(!f.action && !f.grab && f.down===0) f.facing = f.x<=o.x?1:-1;
   // timers
   if(f.cool.special>0) f.cool.special-=DT;
   if(f.cleaver>0) f.cleaver-=DT;
@@ -294,12 +298,12 @@ function updateFighter(f,inp){
     if(inp.left) f.vx=-spd; else if(inp.right) f.vx=spd; else f.vx*=0.6;
   } else f.vx*=0.5;
   if(inp.up && f.onGround){ f.vy=JUMP_V; f.onGround=false; }
-  // actions
+  // actions — punch/kick fire in the held direction (or toward opponent); grab/special are ground-only
   if(f.stun<=0){
     if(pressed(f,inp,'grab')) tryGrab(f);
-    else if(pressed(f,inp,'special')) doSpecial(f);
-    else if(pressed(f,inp,'punch')){ if(startAction(f,MOVES.punch)) Audio.sfx('tsuki'); }
-    else if(pressed(f,inp,'kick')){ if(startAction(f,MOVES.kick)) Audio.sfx('geri'); }
+    else if(pressed(f,inp,'special')) doSpecial(f,attackFacing(f,inp));
+    else if(pressed(f,inp,'punch')){ const d=attackFacing(f,inp); if(startAction(f,MOVES.punch)){ f.facing=d; Audio.sfx('tsuki'); } }
+    else if(pressed(f,inp,'kick')){ const d=attackFacing(f,inp); if(startAction(f,MOVES.kick)){ f.facing=d; Audio.sfx('geri'); } }
   }
   physics(f); clampPos(f);
 }
@@ -402,17 +406,40 @@ function drawWatermark(cx,cy,r,alpha){ if(!logoOk) return; ctx.save(); ctx.globa
 // ---- menu ----
 function drawMenu(){
   buttons=[]; bg2();
-  if(logoOk){ const s=190; ctx.drawImage(logo,W/2-s/2,54,s,s); }
-  ctx.fillStyle=GOLD; ctx.textAlign='center'; ctx.font='bold 46px "Trebuchet MS"';
-  ctx.fillText('KEMPOKA',W/2,285);
-  ctx.font='italic 18px "Trebuchet MS"'; ctx.fillStyle='#d8c9a0';
-  ctx.fillText('The Chosen Ones · Zen Bu Kan Kempo',W/2,312);
-  btn(W/2-150,340,300,52,'1 PLAYER',()=>{mode='1p';gotoSelect();},false);
-  btn(W/2-150,402,300,52,'2 PLAYERS',()=>{mode='2p';gotoSelect();},false);
-  btn(W/2-150,468,145,44,'MUSIC: '+(Audio.musicOn?'ON':'OFF'),()=>Audio.toggleMusic(),Audio.musicOn);
-  btn(W/2+5,468,145,44,'SFX: '+(Audio.sfxOn?'ON':'OFF'),()=>Audio.toggleSfx(),Audio.sfxOn);
+  if(logoOk){ const s=160; ctx.drawImage(logo,W/2-s/2,40,s,s); }
+  ctx.fillStyle=GOLD; ctx.textAlign='center'; ctx.font='bold 44px "Trebuchet MS"';
+  ctx.fillText('KEMPOKA',W/2,244);
+  ctx.font='italic 17px "Trebuchet MS"'; ctx.fillStyle='#d8c9a0';
+  ctx.fillText('The Chosen Ones · Zen Bu Kan Kempo',W/2,268);
+  btn(W/2-150,300,300,50,'1 PLAYER',()=>{mode='1p';gotoSelect();},false);
+  btn(W/2-150,356,300,50,'2 PLAYERS',()=>{mode='2p';gotoSelect();},false);
+  btn(W/2-150,412,300,44,'CONTROLS',()=>{state='controls';},false);
+  btn(W/2-150,466,145,42,'MUSIC: '+(Audio.musicOn?'ON':'OFF'),()=>Audio.toggleMusic(),Audio.musicOn);
+  btn(W/2+5,466,145,42,'SFX: '+(Audio.sfxOn?'ON':'OFF'),()=>Audio.toggleSfx(),Audio.sfxOn);
   buttons.forEach(drawBtn);
-  hairline(330);
+  hairline(286);
+}
+// ---- controls screen ----
+function drawControls(){
+  buttons=[]; bg2();
+  ctx.fillStyle=GOLD; ctx.textAlign='center'; ctx.font='bold 34px "Trebuchet MS"'; ctx.fillText('CONTROLS',W/2,58); hairline(74);
+  ctx.textAlign='left';
+  const block=(x,title,lines)=>{ ctx.fillStyle=GOLD; ctx.font='bold 19px "Trebuchet MS"'; ctx.fillText(title,x,118);
+    ctx.fillStyle='#e6dcc0'; ctx.font='15px "Trebuchet MS"'; lines.forEach((ln,i)=>ctx.fillText(ln,x,146+i*23)); };
+  block(120,'PLAYER 1  (keyboard)',['A / D — move','W — jump      S — crouch','J — punch (tsuki)','K — kick (geri)','L — block (uke)','U — special','I — grab / clinch counter']);
+  block(540,'PLAYER 2  (keyboard, 2P)',['◄ / ► — move','▲ — jump      ▼ — crouch','Num 1 — punch','Num 2 — kick','Num 3 — block','Num 0 — special','Num 4 — grab / counter']);
+  ctx.fillStyle=GOLD; ctx.font='bold 19px "Trebuchet MS"'; ctx.fillText('TIPS',120,338);
+  ctx.fillStyle='#e6dcc0'; ctx.font='15px "Trebuchet MS"';
+  ['• Hold ◄ or ► while attacking to strike that way — otherwise you auto-face the opponent.',
+   '• Punches & kicks work in mid-air. Blocks, grabs, throws and chokes do not.',
+   '• Get close and GRAB for a clinch, then punch to throw. Grab a stunned foe to choke.',
+   '• When grabbed, tap grab to break free — or time it early to reverse the clinch.'].forEach((ln,i)=>ctx.fillText(ln,120,366+i*24));
+  const tl = touchMode==='auto'?'AUTO':(touchMode==='on'?'ON':'OFF');
+  ctx.fillStyle='#b9ac86'; ctx.font='13px "Trebuchet MS"'; ctx.textAlign='center';
+  ctx.fillText('AUTO shows the on-screen pad on touchscreens only; ON forces it (preview on desktop).',W/2,478);
+  btn(W/2-130,490,260,38,'TOUCH BUTTONS: '+tl,()=>{ touchMode = touchMode==='auto'?'on':(touchMode==='on'?'off':'auto'); localStorage.kmp_touch=touchMode; },touchMode!=='off');
+  btn(20,H-50,110,38,'‹ BACK',()=>{state='menu';},false);
+  buttons.forEach(drawBtn);
 }
 function bg2(){ const grd=ctx.createRadialGradient(W/2,240,60,W/2,240,600); grd.addColorStop(0,'#242015'); grd.addColorStop(1,INK); ctx.fillStyle=grd; ctx.fillRect(0,0,W,H); }
 function hairline(y){ ctx.strokeStyle='rgba(245,168,0,.5)'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(W/2-220,y); ctx.lineTo(W/2+220,y); ctx.stroke(); }
@@ -529,9 +556,12 @@ let last=performance.now();
 function loop(now){ DT=Math.min(0.05,(now-last)/1000); last=now;
   handleClick();
   if(state==='menu') drawMenu();
+  else if(state==='controls') drawControls();
   else if(state==='select') drawSelect();
   else if(state==='fight'){ updateFight(); drawFight(); }
   else if(state==='result') drawResult();
+  // on-screen pad: only where it's usable (a live fight) or being previewed on the controls screen
+  document.getElementById('touch').classList.toggle('on', wantTouch() && (state==='fight'||state==='controls'));
   requestAnimationFrame(loop);
 }
 bindTouch();
