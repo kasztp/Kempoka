@@ -63,10 +63,28 @@ const CHARACTERS = [
     special:{name:'Mawashi', type:'spin'} },
 ];
 
-// ---------- Move table -------------------------------------------------------
+// ---------- Move tables ------------------------------------------------------
+// MOVES = bases used by specials. PUNCHES / KICKS = normal attacks, keyed by the
+// held direction relative to the opponent: neutral | toward | back | up | down.
+// top/bot are the hitbox band as a fraction of fighter height (so head strikes hit
+// high, body/low strikes hit low). This is the whole "moveset" — pure data.
 const MOVES = {
   punch:{ dur:0.30, active:[0.09,0.17], reach:56, top:-0.66, bot:-0.5, dmg:6,  knock:180, pose:'punch' },
   kick: { dur:0.44, active:[0.15,0.28], reach:78, top:-0.5,  bot:-0.28, dmg:10, knock:300, pose:'kick'  },
+};
+const PUNCHES = {
+  neutral:{ name:'Jab',        dur:0.24, active:[0.06,0.12], reach:52, top:-0.74, bot:-0.60, dmg:5,  knock:150, pose:'jab'   },
+  toward: { name:'Cross',      dur:0.34, active:[0.11,0.19], reach:64, top:-0.72, bot:-0.58, dmg:9,  knock:270, pose:'cross' },
+  up:     { name:'Uppercut',   dur:0.42, active:[0.10,0.20], reach:46, top:-0.88, bot:-0.52, dmg:11, knock:170, launch:-430, pose:'upper' },
+  down:   { name:'Body hook',  dur:0.32, active:[0.10,0.18], reach:50, top:-0.56, bot:-0.40, dmg:8,  knock:170, pose:'hookB' },
+  back:   { name:'Head hook',  dur:0.40, active:[0.13,0.22], reach:58, top:-0.78, bot:-0.62, dmg:10, knock:240, pose:'hookH' },
+};
+const KICKS = {
+  neutral:{ name:'Front kick (tepe)', dur:0.40, active:[0.13,0.24], reach:86, top:-0.62, bot:-0.46, dmg:9,  knock:380, pose:'tepe'  },
+  down:   { name:'Low kick',          dur:0.32, active:[0.10,0.20], reach:72, top:-0.24, bot:-0.06, dmg:8,  knock:140, pose:'low'   },
+  toward: { name:'Roundhouse (ribs)', dur:0.46, active:[0.16,0.28], reach:86, top:-0.60, bot:-0.42, dmg:12, knock:320, pose:'round' },
+  back:   { name:'Side kick (ribs)',  dur:0.44, active:[0.16,0.28], reach:94, top:-0.58, bot:-0.44, dmg:11, knock:360, pose:'round' },
+  up:     { name:'Head kick',         dur:0.54, active:[0.20,0.32], reach:88, top:-0.94, bot:-0.70, dmg:15, knock:410, pose:'roundH'},
 };
 const GRAV=2200, JUMP_V=-820, CLINCH_RANGE=64, CLINCH_WINDOW=1.5, REVERSAL_WINDOW=0.4;
 const ROUND_TIME=60, WINS_NEEDED=2;
@@ -171,8 +189,17 @@ function makeFighter(char,side,x){
     anim:0, cleaver:0, prev:{} };
 }
 function opp(f){ return f===F[0]?F[1]:F[0]; }
-// strike direction: held direction key wins, else auto-face the opponent
-function attackFacing(f,inp){ if(inp.left&&!inp.right) return -1; if(inp.right&&!inp.left) return 1; return f.x<=opp(f).x?1:-1; }
+// you always auto-face the opponent; the held direction selects the move variant
+// (relative to the opponent): up/down win, else toward/back, else neutral.
+function faceDir(f){ return f.x<=opp(f).x?1:-1; }
+function moveDir(f,inp){
+  if(inp.up) return 'up';
+  if(inp.down) return 'down';
+  const toOpp = faceDir(f);   // +1 = opponent is to the right
+  if((toOpp>0&&inp.right)||(toOpp<0&&inp.left)) return 'toward';
+  if((toOpp>0&&inp.left)||(toOpp<0&&inp.right)) return 'back';
+  return 'neutral';
+}
 
 function startAction(f,move,extra){   // punch/kick allowed airborne; grab/block/throw are gated elsewhere to ground/clinch
   if(f.grab||f.down>0||f.stun>0||f.action) return false;
@@ -192,15 +219,30 @@ function doSpecial(f,dir){
   else if(t==='throw'){ if(startAction(f,{...MOVES.punch,reach:70,dmg:2,pose:'punch'},{special:true,grabAttempt:true})){ f.vx=f.facing*360; Audio.sfx('grab'); } }
 }
 
-// grappling
-function tryGrab(f){
+// grappling — Grab + direction: neutral=clinch, down=double-leg, back=single-leg, up=judo throw
+function tryGrab(f,dir){
   if(f.grab||f.down>0||f.stun>0||f.action||!f.onGround) return;
   const o=opp(f);
-  if(inClinchRange(f,o) && !o.grab && o.down===0){
+  f.facing=faceDir(f);
+  const shoot = dir==='down'||dir==='back';              // leg takedowns reach a little further
+  const range = shoot?84:CLINCH_RANGE;
+  const reachable = Math.abs(f.x-o.x)<range && Math.abs(f.y-o.y)<24 && !o.grab && o.down===0 && !o.airThrow;
+  if(!reachable){                                         // whiff: committed recovery so it can be punished (the counter)
+    f.action={ move:{active:[0,0],pose:'shoot'}, t:0, dur:0.35, hit:true }; Audio.sfx('whiff'); return;
+  }
+  if(dir==='down'){ takedown(f,o,10,0.9); }               // double-leg
+  else if(dir==='back'){ takedown(f,o,8,0.8); }           // single-leg
+  else if(dir==='up'){ doThrow(f); f.action={ move:{active:[0,0],pose:'shoot'}, t:0, dur:0.35, hit:true }; } // judo throw
+  else {                                                  // neutral clinch (throw/choke follow)
     const behind = o.stun>0; // ponytail: "behind/positional" opening modeled as grabbing a stunned foe -> choke enabled
     f.grab={role:'grabber',t:0,behind,choke:0}; o.grab={role:'grabbed',t:0,behind:false,choke:0};
-    f.action=null; o.action=null; Audio.sfx('grab');
+    o.action=null; Audio.sfx('grab');
   }
+}
+function takedown(f,o,dmg,downT){                          // shoot to a floored knockdown (blocking sprawls it)
+  if(o.blocking){ o.hp-=computeDamage(dmg,f,o,true); Audio.sfx('block'); }
+  else { o.hp-=computeDamage(dmg,f,o,false); o.down=downT; o.vx=f.facing*140; o.stun=0; Audio.sfx('throw'); }
+  f.action={ move:{active:[0,0],pose:'shoot'}, t:0, dur:0.4, hit:true };
 }
 function endClinch(){ if(F[0].grab)F[0].grab=null; if(F[1].grab)F[1].grab=null; }
 function doThrow(f){ const o=opp(f); endClinch(); o.vx=f.facing*520; o.vy=-360; o.airThrow=true; o.rot=0; o.onGround=false;
@@ -225,8 +267,9 @@ function aiInput(f){
   }
   if(ai.plan==='approach'){ inp[toward]=true; }
   else if(ai.plan==='block'){ inp.block=true; if(dist>110) inp[toward]=true; }
-  else if(dist<CLINCH_RANGE+6 && ai.plan==='grab'){ inp.grab=true; }
-  else if(dist<100){ inp[ai.plan==='kick'?'kick':'punch']=true; }
+  else if(ai.plan==='grab' && dist<82){ inp.grab=true; const g=Math.random(); if(g<0.4) inp.down=true; else if(g<0.6) inp[toward==='right'?'left':'right']=true; } // sometimes double/single-leg
+  else if(dist<100){ inp[ai.plan==='kick'?'kick':'punch']=true;   // add a directional modifier for variety
+    const m=Math.random(); if(m<0.25) inp.down=true; else if(m<0.4) inp.up=true; else if(m<0.7) inp[toward]=true; }
   else inp[toward]=true;
   if(f.cool.special<=0 && dist<130 && Math.random()<0.02) inp.special=true;
   return inp;
@@ -282,7 +325,8 @@ function updateFighter(f,inp){
         f.action.hit=true;
         let dmg=computeDamage(m.dmg*(f.cleaver>0?1.35:1),f,o,o.blocking);
         o.hp-=dmg; o.vx=f.facing*m.knock*(o.blocking?0.4:1);
-        if(o.blocking){ Audio.sfx('block'); } else { o.stun=0.32; Audio.sfx('hit'); }
+        if(o.blocking){ Audio.sfx('block'); }
+        else { o.stun=0.32; if(m.launch){ o.vy=m.launch; o.onGround=false; } Audio.sfx('hit'); }   // uppercut pops them up
       }
     }
     physics(f);
@@ -297,13 +341,17 @@ function updateFighter(f,inp){
   if(!f.blocking && !f.crouching){
     if(inp.left) f.vx=-spd; else if(inp.right) f.vx=spd; else f.vx*=0.6;
   } else f.vx*=0.5;
-  if(inp.up && f.onGround){ f.vy=JUMP_V; f.onGround=false; }
-  // actions — punch/kick fire in the held direction (or toward opponent); grab/special are ground-only
+  // actions — direction + button picks the variant. Read edges once so we can gate jump.
+  const dir=moveDir(f,inp);
+  const eGrab=pressed(f,inp,'grab'), eSpecial=pressed(f,inp,'special'), ePunch=pressed(f,inp,'punch'), eKick=pressed(f,inp,'kick');
+  const upAttack = dir==='up' && f.onGround && (ePunch||eKick||eGrab||eSpecial);   // ▲+attack = uppercut/head kick, not a jump
+  if(inp.up && f.onGround && !upAttack){ f.vy=JUMP_V; f.onGround=false; }
   if(f.stun<=0){
-    if(pressed(f,inp,'grab')) tryGrab(f);
-    else if(pressed(f,inp,'special')) doSpecial(f,attackFacing(f,inp));
-    else if(pressed(f,inp,'punch')){ const d=attackFacing(f,inp); if(startAction(f,MOVES.punch)){ f.facing=d; Audio.sfx('tsuki'); } }
-    else if(pressed(f,inp,'kick')){ const d=attackFacing(f,inp); if(startAction(f,MOVES.kick)){ f.facing=d; Audio.sfx('geri'); } }
+    f.facing=faceDir(f);
+    if(eGrab) tryGrab(f,dir);
+    else if(eSpecial) doSpecial(f,f.facing);
+    else if(ePunch){ if(startAction(f,PUNCHES[dir]||PUNCHES.neutral)) Audio.sfx('tsuki'); }
+    else if(eKick){ if(startAction(f,KICKS[dir]||KICKS.neutral)) Audio.sfx('geri'); }
   }
   physics(f); clampPos(f);
 }
@@ -347,6 +395,23 @@ function drawFighter(f){
   else if(pose==='hit'){ sh=[-0.06*h,-0.74*h]; head=[-0.09*h,-0.88*h]; fHand=[0.02*h,-0.66*h]; bHand=[-0.2*h,-0.56*h]; }
   else if(pose==='punch'){ const p=f.action?Math.min(1,f.action.t/0.17):1; const ext=0.16+p*0.34; fHand=[ext*h*(f.cleaver>0?1.3:1),-0.62*h]; bHand=[-0.14*h,-0.6*h]; }
   else if(pose==='kick'){ const p=f.action?Math.min(1,f.action.t/0.28):1; fFoot=[(0.14+p*0.42)*h,(-0.1-p*0.3)*h]; fHand=[-0.05*h,-0.62*h]; bHand=[-0.16*h,-0.58*h]; }
+  // punch family: hand extends toward the foe at the move's hitbox height
+  else if(pose==='jab'||pose==='cross'||pose==='hookH'||pose==='hookB'){
+    const m=f.action&&f.action.move, p=m?Math.min(1,f.action.t/(m.active[1]||0.15)):1;
+    const hy=(m?(m.top+m.bot)/2:-0.62)*h;
+    fHand=[(0.12*h+p*(m?m.reach:40))*(f.cleaver>0?1.2:1)*((pose==='hookH'||pose==='hookB')?0.85:1), hy]; bHand=[-0.12*h,-0.6*h];
+  }
+  else if(pose==='upper'){ const m=f.action&&f.action.move, p=m?Math.min(1,f.action.t/(m.active[1]||0.18)):1;
+    fHand=[(0.18+0.14*p)*h, (-0.5-0.42*p)*h]; bHand=[-0.12*h,-0.58*h]; }
+  // kick family: foot extends toward the foe at the move's hitbox height
+  else if(pose==='tepe'||pose==='low'||pose==='round'||pose==='roundH'){
+    const m=f.action&&f.action.move, p=m?Math.min(1,f.action.t/(m.active[1]||0.2)):1;
+    const hy=(m?(m.top+m.bot)/2:-0.4)*h;
+    fFoot=[0.14*h+p*(m?m.reach:60), hy]; fHand=[-0.06*h,-0.62*h]; bHand=[-0.16*h,-0.56*h]; bFoot=[-0.16*h,0];
+    if(pose!=='low') hip=[-0.02*h,-0.44*h];
+  }
+  else if(pose==='shoot'){ hip=[0.06*h,-0.28*h]; sh=[0.14*h,-0.46*h]; head=[0.22*h,-0.54*h];
+    fHand=[0.42*h,-0.2*h]; bHand=[0.34*h,-0.24*h]; fFoot=[0.3*h,0]; bFoot=[-0.22*h,0]; }
   else if(pose==='clinch'||pose==='choke'){ fHand=[0.34*h,-0.7*h]; bHand=[0.28*h,-0.62*h]; hip[0]=0.03*h; }
 
   const line=(a,b,w,col)=>{ ctx.strokeStyle=col; ctx.lineWidth=w; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke(); };
@@ -422,23 +487,33 @@ function drawMenu(){
 // ---- controls screen ----
 function drawControls(){
   buttons=[]; bg2();
-  ctx.fillStyle=GOLD; ctx.textAlign='center'; ctx.font='bold 34px "Trebuchet MS"'; ctx.fillText('CONTROLS',W/2,58); hairline(74);
+  ctx.fillStyle=GOLD; ctx.textAlign='center'; ctx.font='bold 32px "Trebuchet MS"'; ctx.fillText('CONTROLS',W/2,48); hairline(62);
   ctx.textAlign='left';
-  const block=(x,title,lines)=>{ ctx.fillStyle=GOLD; ctx.font='bold 19px "Trebuchet MS"'; ctx.fillText(title,x,118);
-    ctx.fillStyle='#e6dcc0'; ctx.font='15px "Trebuchet MS"'; lines.forEach((ln,i)=>ctx.fillText(ln,x,146+i*23)); };
-  block(120,'PLAYER 1  (keyboard)',['A / D — move','W — jump      S — crouch','J — punch (tsuki)','K — kick (geri)','L — block (uke)','U — special','I — grab / clinch counter']);
-  block(540,'PLAYER 2  (keyboard, 2P)',['◄ / ► — move','▲ — jump      ▼ — crouch','Num 1 — punch','Num 2 — kick','Num 3 — block','Num 0 — special','Num 4 — grab / counter']);
-  ctx.fillStyle=GOLD; ctx.font='bold 19px "Trebuchet MS"'; ctx.fillText('TIPS',120,338);
-  ctx.fillStyle='#e6dcc0'; ctx.font='15px "Trebuchet MS"';
-  ['• Hold ◄ or ► while attacking to strike that way — otherwise you auto-face the opponent.',
-   '• Punches & kicks work in mid-air. Blocks, grabs, throws and chokes do not.',
-   '• Get close and GRAB for a clinch, then punch to throw. Grab a stunned foe to choke.',
-   '• When grabbed, tap grab to break free — or time it early to reverse the clinch.'].forEach((ln,i)=>ctx.fillText(ln,120,366+i*24));
+  const keys=(x,title,lines)=>{ ctx.fillStyle=GOLD; ctx.font='bold 17px "Trebuchet MS"'; ctx.fillText(title,x,92);
+    ctx.fillStyle='#e6dcc0'; ctx.font='14px "Trebuchet MS"'; lines.forEach((ln,i)=>ctx.fillText(ln,x,114+i*21)); };
+  keys(70,'PLAYER 1  (keyboard)',['A / D — move    W — jump    S — crouch','J — punch    K — kick    L — block','U — special    I — grab / counter']);
+  keys(520,'PLAYER 2  (2P keyboard)',['← / → — move    ↑ — jump    ↓ — crouch','Num 1 — punch   Num 2 — kick   Num 3 — block','Num 0 — special   Num 4 — grab / counter']);
+  // moves — direction + button
+  ctx.fillStyle=GOLD; ctx.font='bold 17px "Trebuchet MS"'; ctx.fillText('MOVES  ( hold a direction + attack button )',70,210);
+  ctx.fillStyle='#b9ac86'; ctx.font='13px "Trebuchet MS"'; ctx.fillText('→ = toward the opponent   ← = away   (you always auto-face the foe)',70,230);
+  const row=(y,head,rest)=>{ ctx.font='bold 16px "Trebuchet MS"'; ctx.fillStyle=GOLD; ctx.fillText(head,70,y);
+    ctx.font='15px "Trebuchet MS"'; ctx.fillStyle='#e6dcc0'; ctx.fillText(rest,168,y); };
+  row(258,'PUNCH', 'Jab   ·   → Cross   ·   ↑ Uppercut   ·   ↓ Body hook   ·   ← Head hook');
+  row(284,'KICK',  'Front / tepe   ·   ↓ Low kick   ·   → Roundhouse (ribs)   ·   ← Side kick   ·   ↑ Head kick');
+  row(310,'GRAB',  'Clinch   ·   ↓ Double-leg   ·   ← Single-leg   ·   ↑ Judo throw');
+  ctx.fillStyle='#b9ac86'; ctx.font='13px "Trebuchet MS"';
+  ctx.fillText('In a clinch: punch = throw · kick a stunned foe = choke · the grabbed fighter taps grab to escape/reverse.',70,334);
+  ctx.fillStyle='#e6dcc0'; ctx.font='14px "Trebuchet MS"';
+  ['• Uppercut & head kick beat jump-ins; low kick & body hook stay under high strikes.',
+   '• Punches & kicks work in mid-air. Blocks, grabs, throws & chokes are ground-only.',
+   '• Takedowns whiff (and can be punished) if you shoot out of range or into a block.'].forEach((ln,i)=>ctx.fillText(ln,70,364+i*22));
   const tl = touchMode==='auto'?'AUTO':(touchMode==='on'?'ON':'OFF');
   ctx.fillStyle='#b9ac86'; ctx.font='13px "Trebuchet MS"'; ctx.textAlign='center';
-  ctx.fillText('AUTO shows the on-screen pad on touchscreens only; ON forces it (preview on desktop).',W/2,478);
-  btn(W/2-130,490,260,38,'TOUCH BUTTONS: '+tl,()=>{ touchMode = touchMode==='auto'?'on':(touchMode==='on'?'off':'auto'); localStorage.kmp_touch=touchMode; },touchMode!=='off');
-  btn(20,H-50,110,38,'‹ BACK',()=>{state='menu';},false);
+  ctx.fillText('AUTO shows the on-screen pad on touchscreens only; ON forces it (preview on desktop).',W/2,452);
+  btn(W/2-130,464,260,36,'TOUCH BUTTONS: '+tl,()=>{ touchMode = touchMode==='auto'?'on':(touchMode==='on'?'off':'auto'); localStorage.kmp_touch=touchMode; },touchMode!=='off');
+  ctx.textAlign='center'; ctx.fillStyle='#b9ac86'; ctx.font='12px "Trebuchet MS"';
+  ctx.fillText('On the touch pad, hold a D-pad direction together with an attack button for the variants.',W/2,516);
+  btn(20,H-46,104,34,'‹ BACK',()=>{state='menu';},false);
   buttons.forEach(drawBtn);
 }
 function bg2(){ const grd=ctx.createRadialGradient(W/2,240,60,W/2,240,600); grd.addColorStop(0,'#242015'); grd.addColorStop(1,INK); ctx.fillStyle=grd; ctx.fillRect(0,0,W,H); }
@@ -574,8 +649,15 @@ function runSelfCheck(){
   const ok1 = blk < noBlk;
   const ok2 = rectsOverlap({x0:0,x1:10,y0:0,y1:10},{x0:5,x1:15,y0:5,y1:15}) && !rectsOverlap({x0:0,x1:5,y0:0,y1:5},{x0:6,x1:9,y0:6,y1:9});
   b.x=a.x+300; const ok3 = !inClinchRange(a,b); b.x=a.x+40; const ok4=inClinchRange(a,b);
-  const pass=ok1&&ok2&&ok3&&ok4;
+  // directional move selection: opponent to the right, so holding right = toward, left = back
+  a.x=100; b.x=500; F[0]=a; F[1]=b;   // moveDir/opp read the global F
+  const ok5 = moveDir(a,{up:true})==='up' && moveDir(a,{down:true})==='down'
+           && moveDir(a,{right:true})==='toward' && moveDir(a,{left:true})==='back' && moveDir(a,{})==='neutral';
+  F[0]=null; F[1]=null;
+  const ok6 = KICKS.up.name==='Head kick' && PUNCHES.up.launch<0;   // tables wired
+  const pass=ok1&&ok2&&ok3&&ok4&&ok5&&ok6;
   console.assert(ok1,'block should reduce damage'); console.assert(ok2,'rect overlap'); console.assert(ok3,'grab fails at range'); console.assert(ok4,'grab works in range');
+  console.assert(ok5,'moveDir maps directions'); console.assert(ok6,'move tables wired');
   const el=document.createElement('div'); el.style.cssText='position:fixed;top:8px;left:8px;z-index:99;font:bold 16px monospace;padding:8px 12px;border-radius:6px;color:#000;background:'+(pass?'#3c3':'#f44');
   el.textContent='SELF-CHECK '+(pass?'PASS':'FAIL'); document.body.appendChild(el);
   return pass;

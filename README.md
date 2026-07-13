@@ -24,11 +24,17 @@ python3 -m http.server 8000   # then visit http://localhost:8000
 devices (during a fight). Touch drives Player 1 (vs CPU). On a desktop you can preview them via
 **Controls → Touch buttons: ON**.
 
-**Aiming & air attacks:** hold ◄/► while pressing an attack to strike that way; with no direction
-held you automatically face the opponent. Punches and kicks work in mid-air — blocks, grabs,
-throws and chokes are ground-only.
+**Moveset — direction + attack button.** You always auto-face the opponent; the *held direction*
+selects the variant (→ = toward the foe, ← = away):
 
-The in-game **Controls** screen (main menu) lists everything.
+- **Punch:** neutral Jab · → Cross · ▲ Uppercut · ▼ Body hook · ← Head hook
+- **Kick:** neutral Front kick (tepe) · ▼ Low kick · → Roundhouse (ribs) · ← Side kick · ▲ Head kick
+- **Grab:** neutral Clinch (then punch = throw, kick a stunned foe = choke) · ▼ Double-leg takedown ·
+  ← Single-leg takedown · ▲ Judo throw
+
+Uppercut and head kick punish jump-ins; low kick and body hook stay under high strikes. Punches and
+kicks work in mid-air; blocks, grabs, throws and chokes are ground-only. Takedowns whiff and leave you
+open if you shoot out of range or into a block. The full list is on the in-game **Controls** screen.
 
 ## Grappling (Zen Bu Kan Kempo rules)
 
