@@ -27,15 +27,18 @@
   input.cfield[type=color] { padding:2px; }
   input.cfield[type=range] { background:transparent; border:none; padding:0; accent-color:#F5A800; }
   select.cfield { padding:0 4px; }
-  /* persistent fullscreen toggle — always available, independent of game state */
-  #fsBtn { position:fixed; top:10px; right:10px; z-index:30; width:38px; height:38px; display:none;
+  /* persistent top-right corner buttons (fullscreen toggle, exit-to-menu during a match) */
+  .cornerBtn { position:fixed; top:8px; z-index:30; width:32px; height:32px; display:none;
     align-items:center; justify-content:center; color:var(--gold); background:rgba(26,26,26,.55);
-    border:2px solid rgba(245,168,0,.7); border-radius:8px; font-size:17px; cursor:pointer; }
-  #fsBtn.show { display:flex; }
-  #fsBtn:active { background:rgba(245,168,0,.35); }
+    border:2px solid rgba(245,168,0,.7); border-radius:7px; font-size:15px; cursor:pointer; }
+  .cornerBtn.show { display:flex; }
+  .cornerBtn:active { background:rgba(245,168,0,.35); }
+  #fsBtn { right:8px; }
+  #exitBtn { right:46px; font-size:17px; }
 </style>
 <div id="wrap"><canvas id="cv" width="960" height="540"></canvas></div>
-<div id="fsBtn" title="Fullscreen">⛶</div>
+<div id="exitBtn" class="cornerBtn" title="Exit to Menu">⌂</div>
+<div id="fsBtn" class="cornerBtn" title="Fullscreen">⛶</div>
 <div id="touch">
   <div class="tbtn" id="tLeft" data-k="left">◀</div>
   <div class="tbtn" id="tRight" data-k="right">▶</div>
@@ -964,8 +967,9 @@ function drawFight(){
     ctx.fillText(f.grab.behind?'THROW / CHOKE!':'THROW!',f.x,f.y-fh(f)-14); }
     else if(f.grab){ ctx.fillStyle='#fff'; ctx.font='bold 14px "Trebuchet MS"'; ctx.textAlign='center'; ctx.fillText('COUNTER!',f.x,f.y-fh(f)-14); } });
 }
+const HUD_MARGIN=130;   // extra edge inset (vs. a plain 30) so the corner buttons never sit over the HP bar
 function drawHUD(){
-  for(let i=0;i<2;i++){ const f=F[i], right=i===1, bx=right?W-30-360:30;
+  for(let i=0;i<2;i++){ const f=F[i], right=i===1, bx=right?W-HUD_MARGIN-360:HUD_MARGIN;
     // hp bar
     ctx.fillStyle='#000'; ctx.fillRect(bx-2,16,364,26);
     ctx.fillStyle='#5a1414'; ctx.fillRect(bx,18,360,22);
@@ -1015,8 +1019,10 @@ function loop(now){ DT=Math.min(0.05,(now-last)/1000); last=now;
   // on-screen pad: only where it's usable (a live fight) or being previewed on the controls screen
   document.getElementById('touch').classList.toggle('on', wantTouch() && (state==='fight'||state==='controls'));
   document.getElementById('createUI').classList.toggle('on', state==='create');
+  document.getElementById('exitBtn').classList.toggle('show', state==='fight');
   requestAnimationFrame(loop);
 }
+document.getElementById('exitBtn').addEventListener('click', ()=>{ state='menu'; });
 // ---------- Fullscreen toggle (persistent button, independent of game state) --
 // ponytail: element Fullscreen isn't supported on iPhone Safari (iPadOS/desktop/Android are fine)
 // — feature-detect and just hide the button there rather than show a control that silently no-ops.

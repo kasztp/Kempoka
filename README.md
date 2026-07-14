@@ -99,12 +99,15 @@ Promises even though `localStorage` itself is synchronous, specifically so it ca
 calling code — `enterCreate`, `saveDraft`, `deleteCustom`, etc. only ever await the interface, never
 `localStorage` directly.
 
-## Fullscreen
+## Fullscreen / exit to menu
 
-A small ⛶ button, fixed in the top-right corner, is available on every screen — click it to enter
-fullscreen (hides the browser chrome/URL bar) via the standard Fullscreen API; click again (⤫) to
-exit. Not shown on browsers that don't support element fullscreen (notably iPhone Safari — iPadOS,
-desktop, and Android browsers are fine).
+Two small buttons sit fixed in the top-right corner. **⛶** is available on every screen — click to
+enter fullscreen (hides the browser chrome/URL bar) via the standard Fullscreen API; click again
+(⤫) to exit. Not shown on browsers that don't support element fullscreen (notably iPhone Safari —
+iPadOS, desktop, and Android browsers are fine). **⌂** appears only during a match — click it to
+abandon the fight and return to the main menu immediately, no confirmation (same as the result
+screen's "Main Menu" button). The HP bars are inset from the screen edges (`HUD_MARGIN` in
+`index.html`) specifically so these buttons never sit on top of them, at any window size.
 
 ## Graphics style — Classic / HD Pixel toggle
 
