@@ -84,6 +84,22 @@ Promises even though `localStorage` itself is synchronous, specifically so it ca
 calling code — `enterCreate`, `saveDraft`, `deleteCustom`, etc. only ever await the interface, never
 `localStorage` directly.
 
+## Graphics style — Classic / HD Pixel toggle
+
+Main menu, next to MUSIC/SFX: **GFX: CLASSIC / GFX: PIXEL** switches the whole game's rendering
+between the original smooth vector look and a from-scratch **HD retro pixel-art** style — both
+procedurally generated at runtime, no sprite assets, no new dependencies. The switch is instant
+(works mid-fight) and persists across reloads.
+
+Classic is the original renderer, untouched. Pixel mode draws each fighter into a small offscreen
+canvas at reduced native resolution (outlined, 2-tone shaded, blocky limbs/circles) and composites
+it back scaled up with nearest-neighbor upscaling — that low-res-buffer step is what actually
+produces hard pixel-stepped edges; grid-snapping coordinates alone doesn't, since Canvas2D always
+antialiases vector fills/strokes/clips regardless of coordinate rounding. The 4 stage backgrounds
+get a parallel pixel-art treatment too (banded gradients instead of smooth ones, blocky outlined
+props), so the fighters and the world read as one consistent style. See `PIXEL_BUF_SCALE`/`PX` in
+`index.html` to tune chunkiness.
+
 ## CPU opponent (1-Player mode)
 
 1-Player now always shows a second **"Choose CPU Opponent"** select screen after you pick your own

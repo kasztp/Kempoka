@@ -212,6 +212,10 @@ addEventListener('keydown',e=>{ if(isFormField(e)) return; if(KEYMAP[e.code]) e.
 addEventListener('keyup',e=>{ if(isFormField(e)) return; keys.delete(e.code); });
 const touch={};
 let touchMode = localStorage.kmp_touch || 'auto';   // 'auto' | 'on' | 'off'
+let graphicsStyle = localStorage.kmp_graphics || 'classic';   // 'classic' | 'pixel'
+function applyGraphicsStyle(){ cv.style.imageRendering = graphicsStyle==='pixel' ? 'pixelated' : 'auto'; }
+function toggleGraphicsStyle(){ graphicsStyle = graphicsStyle==='pixel'?'classic':'pixel'; localStorage.kmp_graphics=graphicsStyle; applyGraphicsStyle(); }
+applyGraphicsStyle();
 function touchAuto(){ try{ return matchMedia('(pointer: coarse)').matches; }catch(e){ return ('ontouchstart' in window)||navigator.maxTouchPoints>0; } }
 function wantTouch(){ return touchMode==='on' || (touchMode==='auto' && touchAuto()); }
 function bindTouch(){
@@ -487,6 +491,10 @@ function drawFighter(f){
     fHand=[0.42*h,-0.2*h]; bHand=[0.34*h,-0.24*h]; fFoot=[0.3*h,0]; bFoot=[-0.22*h,0]; }
   else if(pose==='clinch'||pose==='choke'){ fHand=[0.34*h,-0.7*h]; bHand=[0.28*h,-0.62*h]; hip[0]=0.03*h; }
 
+  (graphicsStyle==='pixel'?drawFighterPixel:drawFighterClassic)(f,h,c,pose,g,hip,sh,head,headR,fFoot,bFoot,fHand,bHand,fKnee);
+  ctx.restore();
+}
+function drawFighterClassic(f,h,c,pose,g,hip,sh,head,headR,fFoot,bFoot,fHand,bHand,fKnee){
   const line=(a,b,w,col)=>{ ctx.strokeStyle=col; ctx.lineWidth=w; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke(); };
   const isGi=c.outfit==='gi';
   const pantsColor = isGi ? (giAboveBlue(c.beltRank)?GI_BLACK:GI_WHITE) : '#2b2b2b';
@@ -522,9 +530,127 @@ function drawFighter(f){
   else if(c.hair.style!=='bald'){ ctx.beginPath(); ctx.arc(head[0],head[1]-headR*0.25,headR*0.98,Math.PI,0); ctx.fill(); }
   // beard
   if(c.beard){ ctx.fillStyle=c.hair.color; ctx.beginPath(); ctx.arc(head[0],head[1]+headR*0.5,headR*0.75,0,Math.PI); ctx.fill(); }
-  ctx.restore();
+}
+// Reusable low-res offscreen buffer: fighters draw into this at reduced native resolution, then
+// get composited back with nearest-neighbor upscaling — the only way Canvas2D produces genuinely
+// stepped/blocky pixel edges (grid-snapping alone still gets antialiased by fill/stroke/clip).
+const PIXEL_BUF_RANGE=220, PIXEL_BUF_SCALE=2;                 // covers world coords [-220,220]; 2 world units per buffer pixel
+const pixelBuf=document.createElement('canvas'); pixelBuf.width=pixelBuf.height=(PIXEL_BUF_RANGE*2)/PIXEL_BUF_SCALE;
+const bctx=pixelBuf.getContext('2d');
+function drawFighterPixel(f,h,c,pose,g,hip,sh,head,headR,fFoot,bFoot,fHand,bHand,fKnee){
+  bctx.setTransform(1,0,0,1,0,0); bctx.clearRect(0,0,pixelBuf.width,pixelBuf.height);
+  bctx.translate(pixelBuf.width/2, pixelBuf.height/2); bctx.scale(1/PIXEL_BUF_SCALE, 1/PIXEL_BUF_SCALE);
+  const isGi=c.outfit==='gi';
+  const pantsColor = isGi ? (giAboveBlue(c.beltRank)?GI_BLACK:GI_WHITE) : '#2b2b2b';
+  const topColor = isGi ? GI_BLACK : c.gi;
+  // legs (front leg bends at the knee for kicks)
+  if(fKnee){ drawBlockyLimb(hip,fKnee,8*g,pantsColor,bctx); drawBlockyLimb(fKnee,fFoot,7*g,pantsColor,bctx); } else drawBlockyLimb(hip,fFoot,8*g,pantsColor,bctx);
+  drawBlockyLimb(hip,bFoot,8*g,shade(pantsColor,-10),bctx);
+  // torso
+  drawBlockyLimb(hip,sh,22*g,topColor,bctx);
+  // belt
+  const belt=getBelt(c.beltRank);
+  if(belt){ const bx0=hip[0]-11*g, bx1=hip[0]+11*g, by=hip[1]-4;
+    drawBlockyLimb([bx0,by],[bx1,by],8*g,belt.color,bctx);
+    if(belt.stripe){ bctx.strokeStyle=belt.stripe; bctx.lineWidth=2.5; bctx.lineCap='butt'; bctx.beginPath(); bctx.moveTo(snap(bx0),snap(by-3.5)); bctx.lineTo(snap(bx1),snap(by-3.5)); bctx.stroke(); }
+    if(belt.tip){ bctx.fillStyle=belt.tip; bctx.fillRect(snap(bx1-6*g),snap(by-4*g/2),snap(6*g),snap(8)); }
+  }
+  // arms
+  drawBlockyLimb(sh,bHand,7*g,shade(topColor,-20),bctx);
+  drawBlockyLimb(sh,fHand,7*g,topColor,bctx);
+  // hands
+  [fHand,bHand].forEach(hd=>drawBlockyCircle(hd[0],hd[1],4.5,c.skin,null,null,bctx));
+  // cleaver (Imi active)
+  if(f.cleaver>0){ const bx=snap(fHand[0]), by=snap(fHand[1]);
+    bctx.fillStyle=INK; bctx.fillRect(bx-2,by-6,30,16);
+    bctx.fillStyle='#c9ccd4'; bctx.fillRect(bx,by-4,26,12);
+    bctx.fillStyle='#6b4a2a'; bctx.fillRect(bx-8,by-2,10,6);
+  }
+  // head
+  drawBlockyCircle(head[0],head[1],headR,c.skin,null,null,bctx);
+  // hair
+  if(c.hair.style==='braid'){
+    drawBlockyCircleFlat(head[0],head[1]-headR*0.3,headR,c.hair.color,-headR,0,bctx);
+    const p0=[head[0]-headR*0.8,head[1]], p1=[head[0]-headR*1.6,head[1]+headR*1.1], p2=[head[0]-headR*1.4,head[1]+headR*2.4];
+    drawBlockyLimb(p0,p1,6,c.hair.color,bctx); drawBlockyLimb(p1,p2,5,c.hair.color,bctx);
+  } else if(c.hair.style!=='bald'){
+    drawBlockyCircleFlat(head[0],head[1]-headR*0.25,headR*0.98,c.hair.color,-headR*0.98,0,bctx);
+  }
+  // beard
+  if(c.beard) drawBlockyCircleFlat(head[0],head[1]+headR*0.5,headR*0.75,c.hair.color,0,headR*0.75,bctx);
+  // composite: the main ctx already has ctx.translate(f.x,f.y)+ctx.scale(f.facing,1) applied by the
+  // caller, so drawing the buffer centered at local (0,0) inherits the correct position AND mirror.
+  const smoothed=ctx.imageSmoothingEnabled; ctx.imageSmoothingEnabled=false;
+  ctx.drawImage(pixelBuf, -PIXEL_BUF_RANGE, -PIXEL_BUF_RANGE, PIXEL_BUF_RANGE*2, PIXEL_BUF_RANGE*2);
+  ctx.imageSmoothingEnabled=smoothed;
 }
 function shade(hex,amt){ const n=parseInt(hex.slice(1),16); let r=(n>>16)+amt,gc=((n>>8)&255)+amt,b=(n&255)+amt; r=Math.max(0,Math.min(255,r));gc=Math.max(0,Math.min(255,gc));b=Math.max(0,Math.min(255,b)); return '#'+((r<<16)|(gc<<8)|b).toString(16).padStart(6,'0'); }
+
+// ---------- HD pixel-art toolkit (shared by the "pixel" fighter + stage renderers) -----------
+// ponytail: blocky strokes/rows instead of true tapered polygons — same visual payoff (outlined,
+// pixel-snapped, 2-tone shaded), far less geometry code. Upgrade to real quads only if this reads
+// wrong at the close-together-limb poses (shoot/clinch) — see the guard in drawBlockyLimb.
+const PX=2;                                  // pixel-grid size: the one dial for chunky vs detailed
+function snap(v){ return Math.round(v/PX)*PX; }
+// Every helper below takes an optional trailing context (tctx); defaults to the main `ctx` but
+// drawFighterPixel points it at a small offscreen buffer instead (see PIXEL_BUF below) — Canvas2D
+// always antialiases vector fills/strokes no matter how much coordinates are grid-snapped, so the
+// only way to get genuinely stepped/blocky pixel-art edges is to rasterize at low native
+// resolution and upscale with nearest-neighbor. Stage props stay on the main ctx (mostly
+// axis-aligned already, antialiasing is a non-issue there).
+function drawBlockyLimb(a,b,width,col,tctx){      // outline + fill + one shadow band, for one segment
+  tctx=tctx||ctx;
+  const A=[snap(a[0]),snap(a[1])], B=[snap(b[0]),snap(b[1])];
+  const dx=B[0]-A[0], dy=B[1]-A[1], len=Math.hypot(dx,dy)||1;
+  tctx.lineCap='butt'; tctx.lineJoin='miter';
+  tctx.strokeStyle=INK; tctx.lineWidth=width+2*PX; tctx.beginPath(); tctx.moveTo(A[0],A[1]); tctx.lineTo(B[0],B[1]); tctx.stroke();
+  tctx.strokeStyle=col; tctx.lineWidth=width; tctx.beginPath(); tctx.moveTo(A[0],A[1]); tctx.lineTo(B[0],B[1]); tctx.stroke();
+  if(len>=width*1.2){                        // guard: skip the shadow band on squashed/too-short segments
+    const px=-dy/len, py=dx/len, off=width*0.28, sw=Math.max(PX,width*0.36);
+    tctx.strokeStyle=shade(col,-24); tctx.lineWidth=sw; tctx.beginPath();
+    tctx.moveTo(A[0]+px*off,A[1]+py*off); tctx.lineTo(B[0]+px*off,B[1]+py*off); tctx.stroke();
+  }
+}
+const circleRowCache={};
+function circleRows(r){ const key=Math.round(r); if(circleRowCache[key]) return circleRowCache[key];
+  const rows=[]; for(let y=-key;y<=key;y+=PX) rows.push([y, snap(Math.sqrt(Math.max(0,key*key-y*y)))]);
+  circleRowCache[key]=rows; return rows; }
+function drawBlockyCircle(cx,cy,r,col,yMin,yMax,tctx){   // outline + fill + shadow rows (head, hands)
+  tctx=tctx||ctx;
+  const rows=circleRows(r), cx0=snap(cx), cy0=snap(cy);
+  rows.forEach(([y,hw])=>{ if((yMin!=null&&y<yMin)||(yMax!=null&&y>yMax)||hw<=0) return;
+    tctx.fillStyle=INK; tctx.fillRect(cx0-hw-PX,cy0+y,hw*2+2*PX,PX); });
+  rows.forEach(([y,hw])=>{ if((yMin!=null&&y<yMin)||(yMax!=null&&y>yMax)||hw<=0) return;
+    tctx.fillStyle = y>r*0.15 ? shade(col,-22) : col;
+    tctx.fillRect(cx0-hw,cy0+y,hw*2,PX); });
+}
+function drawBlockyCircleFlat(cx,cy,r,col,yMin,yMax,tctx){  // fill-only rows, no outline (hair cap/beard accents)
+  tctx=tctx||ctx;
+  const rows=circleRows(r), cx0=snap(cx), cy0=snap(cy);
+  rows.forEach(([y,hw])=>{ if((yMin!=null&&y<yMin)||(yMax!=null&&y>yMax)||hw<=0) return;
+    tctx.fillStyle=col; tctx.fillRect(cx0-hw,cy0+y,hw*2,PX); });
+}
+function drawBlockyRect(x,y,w,h,col){        // outline + fill + bottom shadow band (stage props)
+  const X=snap(x), Y=snap(y), W=Math.max(PX,snap(w)), H=Math.max(PX,snap(h));
+  ctx.fillStyle=INK; ctx.fillRect(X-PX,Y-PX,W+2*PX,H+2*PX);
+  ctx.fillStyle=col; ctx.fillRect(X,Y,W,H);
+  const bandH=Math.max(PX,snap(H*0.3));
+  ctx.fillStyle=shade(col,-22); ctx.fillRect(X,Y+H-bandH,W,bandH);
+}
+function lerpColor(c1,c2,t){ const n1=parseInt(c1.slice(1),16), n2=parseInt(c2.slice(1),16);
+  const r=Math.round(((n1>>16)&255)*(1-t)+((n2>>16)&255)*t), g=Math.round(((n1>>8)&255)*(1-t)+((n2>>8)&255)*t), b=Math.round((n1&255)*(1-t)+(n2&255)*t);
+  return '#'+((r<<16)|(g<<8)|b).toString(16).padStart(6,'0'); }
+function bandedFillRect(x,y,w,h,colorA,colorB,steps){  // solid color bands instead of a smooth gradient
+  steps=steps||6;
+  for(let i=0;i<steps;i++){ const t=i/(steps-1||1);
+    ctx.fillStyle=lerpColor(colorA,colorB,t);
+    ctx.fillRect(x, snap(y+h*i/steps), w, Math.max(PX,snap(h/steps)+PX)); }
+}
+function bandedRadial(cx,cy,r,colorCenter,colorEdge,steps){  // banded substitute for a radial gradient
+  steps=steps||6;
+  for(let i=steps;i>=1;i--){ const t=i/steps;
+    ctx.fillStyle=lerpColor(colorCenter,colorEdge,t); ctx.beginPath(); ctx.arc(cx,cy,snap(r*t),0,7); ctx.fill(); }
+}
 
 // ---------- Scenes -----------------------------------------------------------
 let state='menu', F=[null,null], mode='1p';
@@ -602,8 +728,58 @@ function stageArena(){ const t=now();                     // 4) World Combat Are
   ctx.fillStyle='#c9c0a8'; ctx.fillRect(0,GROUND,W,H-GROUND); ctx.strokeStyle='rgba(180,40,40,.5)'; ctx.lineWidth=3; ctx.strokeRect(24,GROUND+8,W-48,H-GROUND-18);
 }
 const STAGES=[stageDojo, stageRooftop, stageBamboo, stageArena];
+
+// ---- HD pixel-art stage set (same 4 stages, blocky/banded/outlined via the shared toolkit) ----
+function stageDojoPixel(){ const t=now();
+  bandedFillRect(0,0,W,GROUND,'#221f1c','#131110',6);
+  ctx.strokeStyle='rgba(120,90,70,.12)'; ctx.lineWidth=PX;
+  for(let y=40;y<GROUND;y+=26){ ctx.beginPath(); ctx.moveTo(0,snap(y)); ctx.lineTo(W,snap(y)); ctx.stroke();
+    const off=((y/26)|0)%2?26:0; for(let x=off;x<W;x+=52){ ctx.beginPath(); ctx.moveTo(snap(x),snap(y)); ctx.lineTo(snap(x),snap(y+26)); ctx.stroke(); } }
+  [180,740].forEach(sx=>{ drawBlockyRect(sx,50,46,150,'#d9cdb0'); drawBlockyRect(sx-3,44,52,8,'#9c4227'); drawBlockyRect(sx-3,196,52,8,'#9c4227');
+    ctx.fillStyle='#2a2018'; ctx.font='bold 30px serif'; ctx.textAlign='center'; ctx.fillText('拳',sx+23,102); ctx.fillText('法',sx+23,148); });
+  [360,600].forEach((bx,k)=>{ const sw=Math.sin(t*1.1+k*2)*0.12; ctx.save(); ctx.translate(bx,140); ctx.rotate(sw);
+    drawBlockyLimb([0,-46],[0,0],4,'#3a2f24'); drawBlockyRect(-16,0,32,120,'#4a3423'); ctx.restore(); });
+  drawBlockyRect(0,GROUND,W,H-GROUND,'#5f5d3f');
+  ctx.strokeStyle='rgba(0,0,0,.28)'; ctx.lineWidth=PX; for(let x=0;x<=W;x+=96) ctx.strokeRect(snap(x),GROUND+2,96,H-GROUND-4);
+}
+function stageRooftopPixel(){ const t=now();
+  bandedFillRect(0,0,W,GROUND,'#0a1120','#1a2236',6);
+  DECOR.buildings.forEach((b,bi)=>{ drawBlockyRect(b.x,b.top,b.w,GROUND-b.top,'#0e1524');
+    for(let wy=b.top+10; wy<GROUND-6; wy+=16) for(let wx=b.x+6; wx<b.x+b.w-6; wx+=14)
+      if(((wx*3+wy*7+bi*5)>>2)%5!==0){ ctx.fillStyle=['#ffd36b','#7be0ff','#ff7bd0'][((wx+wy+bi)>>1)%3]; ctx.fillRect(snap(wx),snap(wy),PX*3,PX*4); } });
+  ctx.fillStyle='rgba(120,60,180,.14)'; ctx.fillRect(0,GROUND-60,W,60);
+  ctx.strokeStyle='rgba(185,195,205,.14)'; ctx.lineWidth=PX;
+  for(let x=-GROUND;x<W;x+=22){ ctx.beginPath(); ctx.moveTo(snap(x),80); ctx.lineTo(snap(x+GROUND-80),GROUND); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(snap(x+GROUND-80),80); ctx.lineTo(snap(x),GROUND); ctx.stroke(); }
+  drawBlockyRect(0,GROUND,W,H-GROUND,'#20242a');
+  for(let i=0;i<80;i++){ const rx=snap((i*137 + t*900)%W), ry=snap((i*53 + t*900)%GROUND);
+    ctx.fillStyle='rgba(175,195,225,.55)'; ctx.fillRect(rx,ry,PX,PX*4); }
+}
+function stageBambooPixel(){ const t=now();
+  bandedFillRect(0,0,W,GROUND,'#3a3320','#241d12',6);
+  DECOR.bamboo.forEach(b=>{ const sway=Math.sin(t*0.8+b.ph)*6; drawBlockyLimb([b.x,GROUND],[b.x+sway,b.top],b.w,'#556b34'); });
+  [110,850].forEach(lx=>{ drawBlockyRect(lx-14,GROUND-70,28,10,'#6b6b63'); drawBlockyRect(lx-18,GROUND-60,36,8,'#6b6b63');
+    drawBlockyRect(lx-12,GROUND-52,24,20,'#8a8a80'); ctx.fillStyle='#ffcf7a'; ctx.fillRect(snap(lx-6),snap(GROUND-48),12,12);
+    drawBlockyRect(lx-10,GROUND-30,20,30,'#6b6b63'); });
+  drawBlockyRect(0,GROUND,W,H-GROUND,'#43331f');
+  DECOR.leaves.forEach(l=>{ ctx.fillStyle=l.red?'#b3401a':'#d9a531'; ctx.fillRect(snap(l.x-l.s/2),snap(l.y-l.s/4),snap(l.s),snap(l.s/2)); });
+  DECOR.drift.forEach(d=>{ const dy=(d.y+t*d.sp)%GROUND, dx=d.x+Math.sin(t*0.8+d.ph)*30;
+    ctx.fillStyle=d.red?'#b3401a':'#d9a531'; ctx.fillRect(snap(dx-3),snap(dy-2),6,4); });
+}
+function stageArenaPixel(){ const t=now();
+  ctx.fillStyle='#0b0b0f'; ctx.fillRect(0,0,W,GROUND);
+  drawBlockyRect(0,60,W,GROUND-60,'#141420');
+  DECOR.stars.forEach((s,i)=>{ if(Math.sin(t*9+s.ph)+Math.sin(t*13+i)>1.6){ ctx.fillStyle='#fff'; ctx.fillRect(snap(s.x),snap(s.y+60),PX*2,PX*2); } });
+  bandedRadial(W/2,GROUND*0.35,W*0.5,'#fff7dc','#141420',6);
+  [GROUND-96,GROUND-64,GROUND-32].forEach(ry=>{ drawBlockyLimb([40,ry],[W-40,ry],4,'#c33'); });
+  drawBlockyRect(34,GROUND-104,10,104,'#e8e2d0'); drawBlockyRect(W-44,GROUND-104,10,104,'#e8e2d0');
+  drawBlockyRect(0,GROUND,W,H-GROUND,'#c9c0a8');
+}
+const STAGES_PIXEL=[stageDojoPixel, stageRooftopPixel, stageBambooPixel, stageArenaPixel];
+
 function bg(){ ctx.fillStyle=INK; ctx.fillRect(0,0,W,H);
-  STAGES[stageIndex % STAGES.length]();
+  const set = graphicsStyle==='pixel' ? STAGES_PIXEL : STAGES;
+  set[stageIndex % set.length]();
   ctx.strokeStyle='rgba(245,168,0,.20)'; ctx.lineWidth=2; ctx.strokeRect(30,GROUND+6,W-60,H-GROUND-14);
   drawWatermark(W-70,H-58,44,0.10);
 }
@@ -622,8 +798,9 @@ function drawMenu(){
   btn(W/2-150,278,300,44,'2 PLAYERS',()=>{mode='2p';gotoSelect();},false);
   btn(W/2-150,328,300,40,'CREATE FIGHTER',()=>enterCreate(),false);
   btn(W/2-150,374,300,38,'CONTROLS',()=>{state='controls';},false);
-  btn(W/2-150,422,145,38,'MUSIC: '+(Audio.musicOn?'ON':'OFF'),()=>Audio.toggleMusic(),Audio.musicOn);
-  btn(W/2+5,422,145,38,'SFX: '+(Audio.sfxOn?'ON':'OFF'),()=>Audio.toggleSfx(),Audio.sfxOn);
+  btn(W/2-195,422,110,38,'MUSIC: '+(Audio.musicOn?'ON':'OFF'),()=>Audio.toggleMusic(),Audio.musicOn);
+  btn(W/2-77,422,110,38,'SFX: '+(Audio.sfxOn?'ON':'OFF'),()=>Audio.toggleSfx(),Audio.sfxOn);
+  btn(W/2+41,422,154,38,'GFX: '+(graphicsStyle==='pixel'?'PIXEL':'CLASSIC'),toggleGraphicsStyle,graphicsStyle==='pixel');
   buttons.forEach(drawBtn);
 }
 // ---- controls screen ----
