@@ -1,0 +1,11 @@
+{
+  "name": "kempoka",
+  "private": true,
+  "description": "Kempoka — The Chosen Ones: a Zen Bu Kan Kempo fighting game (index.html) with a unit-tested logic module (game-logic.js).",
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

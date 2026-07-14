@@ -1,8 +1,8 @@
 # Kempoka — The Chosen Ones
 
 A Street Fighter–style 2D fighting game themed around **Zen Bu Kan Kempo**. Runs in any
-browser on desktop (keyboard) or phone/tablet (touch). One self-contained `index.html`,
-no dependencies, no build step.
+browser on desktop (keyboard) or phone/tablet (touch). No dependencies, no build step —
+`index.html` is still everything a player needs.
 
 ## Run it
 
@@ -11,6 +11,21 @@ Just open `index.html` in a browser — double-click it, or serve the folder:
 ```
 python3 -m http.server 8000   # then visit http://localhost:8000
 ```
+
+## Tests
+
+Belts, roster, move tables, and combat math (`computeDamage`, `moveDir`, `getBelt`, etc.) live in
+`game-logic.js` — a small DOM-free module loaded by `index.html` via `<script src>` and also
+`require()`-able directly from Node, which is what makes it unit-testable without a browser.
+Everything canvas/DOM-dependent (rendering, input, audio, the game loop) stays in `index.html`.
+
+```
+npm test   # node --test — zero dependencies, uses Node's built-in test runner
+```
+
+`.github/workflows/ci.yml` runs the same command on every push/PR. There's also an in-browser
+smoke check: append `?test=1` to the URL for a quick visual PASS/FAIL badge covering the same
+combat math plus a live `CharacterStore` round-trip.
 
 ## Controls
 
@@ -53,7 +68,7 @@ procedurally — no image assets.
 
 ## Belt ranks
 
-Belts are a shared rank table (`KYU_RANKS`/`DAN_RANKS` in `index.html`), not per-character colors:
+Belts are a shared rank table (`KYU_RANKS`/`DAN_RANKS` in `game-logic.js`), not per-character colors:
 12th Kyu (White) up through 1st Kyu (Brown, black stripe), then Dan grades (Black). Some kyu grades
 carry a stripe or tip accent (e.g. 6th Kyu = Purple with a brown tip). A gi-wearing fighter's uniform
 follows rank automatically: **below Blue Belt** (White/Yellow/Orange/Green) wears **white pants with
@@ -61,7 +76,7 @@ a black top**; **Blue Belt and above** (including all Dan grades) is **fully bla
 
 ## Adding a character
 
-Every built-in fighter is one object in the `CHARACTERS` array near the top of `index.html`. Copy
+Every built-in fighter is one object in the `CHARACTERS` array in `game-logic.js`. Copy
 an existing entry, change the fields (name, `beltRank` — an id from the belt table above, or `null`
 for no belt — outfit, build, hair/beard, stats, special), and it shows up in character select
 automatically, belt and gi colors included — the grid pages to fit any number. A brand-new kind of
@@ -77,7 +92,7 @@ generated fighter. Saved fighters appear in every fighter-select screen alongsid
 (with a small badge), and can be edited or deleted from the **Create Fighter** screen's "My
 Fighters" list.
 
-Custom fighters are saved via `CharacterStore` (`index.html`), currently backed by `localStorage` —
+Custom fighters are saved via `CharacterStore` (`game-logic.js`), currently backed by `localStorage` —
 **per-browser only, not shared between players.** The store's `list()/save()/remove()` all return
 Promises even though `localStorage` itself is synchronous, specifically so it can be swapped for a
 `fetch()`-based cloud API (a shared roster / leaderboard backend) later without touching any of the
