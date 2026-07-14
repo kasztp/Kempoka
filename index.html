@@ -213,9 +213,9 @@ function doSpecial(f,dir){
   const t=f.char.special.type, o=opp(f);
   if(t==='cleaver'){ if(f.hp <= f.char.stats.maxHp*0.30){ f.cleaver=6; f.cool.special=3; Audio.sfx('grab'); } return; }
   f.cool.special=3;
-  if(t==='combo'){ startAction(f,{...MOVES.punch,dmg:7},{special:true}); f.queue=[{...MOVES.punch,dmg:7},{...MOVES.punch,dmg:12,knock:260}]; Audio.sfx('tsuki'); }
+  if(t==='combo'){ startAction(f,{...PUNCHES.neutral,dmg:6},{special:true}); f.queue=[{...PUNCHES.toward,dmg:8},{...KICKS.toward,dmg:13,knock:340}]; Audio.sfx('tsuki'); }  // jab, cross, roundhouse finisher
   else if(t==='lunge'){ if(startAction(f,{...MOVES.kick,reach:96,dmg:16,knock:380,pose:'punch'},{special:true})){ f.vx=f.facing*520; Audio.sfx('geri'); } }
-  else if(t==='spin'){ if(startAction(f,{...MOVES.kick,active:[0.1,0.34],reach:88,dmg:12,knock:320},{special:true,spin:true})){ f.vx=f.facing*300; Audio.sfx('geri'); } }
+  else if(t==='spin'){ if(startAction(f,{...KICKS.toward,active:[0.1,0.34],reach:92,dmg:12,knock:320},{special:true})){ f.vx=f.facing*300; Audio.sfx('geri'); } }
   else if(t==='throw'){ if(startAction(f,{...MOVES.punch,reach:70,dmg:2,pose:'punch'},{special:true,grabAttempt:true})){ f.vx=f.facing*360; Audio.sfx('grab'); } }
 }
 
@@ -385,7 +385,7 @@ function drawFighter(f){
   const g=c.build.girth;
   // joints in local space (feet at 0,0; up is negative)
   let hip=[0,-0.46*h], sh=[0,-0.76*h], head=[0,-0.9*h], headR=0.11*h;
-  let fFoot=[0.14*h,0], bFoot=[-0.14*h,0], fHand=[0.16*h,-0.6*h], bHand=[-0.12*h,-0.6*h];
+  let fFoot=[0.14*h,0], bFoot=[-0.14*h,0], fHand=[0.16*h,-0.6*h], bHand=[-0.12*h,-0.6*h], fKnee=null;
   const ph=f.anim;
   if(pose==='idle'){ sh[1]-=Math.sin(ph*2)*1.5; fHand=[0.18*h,-0.58*h]; bHand=[-0.14*h,-0.58*h]; }
   else if(pose==='walk'){ const s=Math.sin(ph*10); fFoot=[0.12*h+s*0.12*h,0]; bFoot=[-0.12*h-s*0.12*h,0]; fHand=[0.16*h-s*0.06*h,-0.6*h]; bHand=[-0.14*h+s*0.06*h,-0.6*h]; }
@@ -406,17 +406,21 @@ function drawFighter(f){
   // kick family: foot extends toward the foe at the move's hitbox height
   else if(pose==='tepe'||pose==='low'||pose==='round'||pose==='roundH'){
     const m=f.action&&f.action.move, p=m?Math.min(1,f.action.t/(m.active[1]||0.2)):1;
-    const hy=(m?(m.top+m.bot)/2:-0.4)*h;
-    fFoot=[0.14*h+p*(m?m.reach:60), hy]; fHand=[-0.06*h,-0.62*h]; bHand=[-0.16*h,-0.56*h]; bFoot=[-0.16*h,0];
-    if(pose!=='low') hip=[-0.02*h,-0.44*h];
+    const reach=m?m.reach:60, hy=(m?(m.top+m.bot)/2:-0.4)*h;
+    fHand=[-0.06*h,-0.62*h]; bHand=[-0.16*h,-0.56*h]; bFoot=[-0.16*h,0];
+    if(pose==='tepe'){ fKnee=[0.12*h+p*reach*0.5,hy*0.92]; fFoot=[0.14*h+p*reach,hy]; }        // straight thrust
+    else if(pose==='low'){ fKnee=[0.18*h,-0.15*h]; fFoot=[0.14*h+p*reach,hy]; }                 // low sweep
+    else { hip=[-0.02*h,-0.46*h]; sh=[-0.05*h,-0.76*h];                                          // roundhouse: chambered knee, shin whips across
+      const kx=0.26*h, ky=hy+0.02*h; fKnee=[kx,ky]; fFoot=[Math.max(kx+8,0.10*h+p*reach), ky-p*0.05*h]; }
   }
   else if(pose==='shoot'){ hip=[0.06*h,-0.28*h]; sh=[0.14*h,-0.46*h]; head=[0.22*h,-0.54*h];
     fHand=[0.42*h,-0.2*h]; bHand=[0.34*h,-0.24*h]; fFoot=[0.3*h,0]; bFoot=[-0.22*h,0]; }
   else if(pose==='clinch'||pose==='choke'){ fHand=[0.34*h,-0.7*h]; bHand=[0.28*h,-0.62*h]; hip[0]=0.03*h; }
 
   const line=(a,b,w,col)=>{ ctx.strokeStyle=col; ctx.lineWidth=w; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke(); };
-  // legs
-  line(hip,fFoot,8*g,'#2b2b2b'); line(hip,bFoot,8*g,'#242424');
+  // legs (front leg bends at the knee for kicks)
+  if(fKnee){ line(hip,fKnee,8*g,'#2b2b2b'); line(fKnee,fFoot,7*g,'#2b2b2b'); } else line(hip,fFoot,8*g,'#2b2b2b');
+  line(hip,bFoot,8*g,'#242424');
   // torso (outfit)
   ctx.strokeStyle=c.gi; ctx.lineWidth=22*g; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(hip[0],hip[1]); ctx.lineTo(sh[0],sh[1]); ctx.stroke();
   if(c.outfit==='gi'){ // lapel hint
@@ -594,10 +598,12 @@ function drawSelect(){
     const c=CHARACTERS[idx]; const chosenP1 = mode==='2p'&&selPhase===1&&sel[0]===idx;
     ctx.save(); ctx.fillStyle='rgba(245,168,0,.08)'; ctx.strokeStyle=chosenP1?'#888':GOLD; ctx.lineWidth=chosenP1?2:2.5;
     roundRect(x,y,cw,chh,10); ctx.fill(); ctx.stroke(); ctx.restore();
-    drawPortrait(c,x+cw/2,y+chh-24,0.62);
+    drawPortrait(c,x+cw/2,y+chh-30,72/(132*c.build.scale));   // normalize height so tall fighters don't reach the name/belt
     ctx.fillStyle=GOLD; ctx.font='bold 18px "Trebuchet MS"'; ctx.textAlign='center'; ctx.fillText(c.name,x+cw/2,y+22);
     // belt swatch
     ctx.fillStyle=c.belt||'#eee'; ctx.fillRect(x+cw/2-24,y+30,48,7); ctx.strokeStyle='#0006'; ctx.strokeRect(x+cw/2-24,y+30,48,7);
+    // special
+    ctx.fillStyle='#e8c33a'; ctx.font='bold 12px "Trebuchet MS"'; ctx.fillText('★ '+c.special.name, x+cw/2, y+chh-8);
     buttons.push({x,y,w:cw,h:chh,fn:()=>chooseFighter(idx),label:'',active:false});
   }
   if(pages>1){ btn(x0,y0+rows*(chh+gap)+6,120,40,'◀ PREV',()=>{page=(page-1+pages)%pages;},false);
