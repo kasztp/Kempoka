@@ -99,6 +99,13 @@ Promises even though `localStorage` itself is synchronous, specifically so it ca
 calling code — `enterCreate`, `saveDraft`, `deleteCustom`, etc. only ever await the interface, never
 `localStorage` directly.
 
+## Fullscreen
+
+A small ⛶ button, fixed in the top-right corner, is available on every screen — click it to enter
+fullscreen (hides the browser chrome/URL bar) via the standard Fullscreen API; click again (⤫) to
+exit. Not shown on browsers that don't support element fullscreen (notably iPhone Safari — iPadOS,
+desktop, and Android browsers are fine).
+
 ## Graphics style — Classic / HD Pixel toggle
 
 Main menu, next to MUSIC/SFX: **GFX: CLASSIC / GFX: PIXEL** switches the whole game's rendering

@@ -27,8 +27,15 @@
   input.cfield[type=color] { padding:2px; }
   input.cfield[type=range] { background:transparent; border:none; padding:0; accent-color:#F5A800; }
   select.cfield { padding:0 4px; }
+  /* persistent fullscreen toggle — always available, independent of game state */
+  #fsBtn { position:fixed; top:10px; right:10px; z-index:30; width:38px; height:38px; display:none;
+    align-items:center; justify-content:center; color:var(--gold); background:rgba(26,26,26,.55);
+    border:2px solid rgba(245,168,0,.7); border-radius:8px; font-size:17px; cursor:pointer; }
+  #fsBtn.show { display:flex; }
+  #fsBtn:active { background:rgba(245,168,0,.35); }
 </style>
 <div id="wrap"><canvas id="cv" width="960" height="540"></canvas></div>
+<div id="fsBtn" title="Fullscreen">⛶</div>
 <div id="touch">
   <div class="tbtn" id="tLeft" data-k="left">◀</div>
   <div class="tbtn" id="tRight" data-k="right">▶</div>
@@ -1010,6 +1017,25 @@ function loop(now){ DT=Math.min(0.05,(now-last)/1000); last=now;
   document.getElementById('createUI').classList.toggle('on', state==='create');
   requestAnimationFrame(loop);
 }
+// ---------- Fullscreen toggle (persistent button, independent of game state) --
+// ponytail: element Fullscreen isn't supported on iPhone Safari (iPadOS/desktop/Android are fine)
+// — feature-detect and just hide the button there rather than show a control that silently no-ops.
+(function initFullscreen(){
+  const btn = document.getElementById('fsBtn');
+  const canFullscreen = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
+  if(!canFullscreen){ return; }
+  btn.classList.add('show');
+  function isFs(){ return !!(document.fullscreenElement || document.webkitFullscreenElement); }
+  function updateIcon(){ btn.textContent = isFs() ? '⤫' : '⛶'; btn.title = isFs() ? 'Exit fullscreen' : 'Fullscreen'; }
+  btn.addEventListener('click', ()=>{
+    if(isFs()){ (document.exitFullscreen||document.webkitExitFullscreen).call(document); }
+    else{ const el=document.documentElement; (el.requestFullscreen||el.webkitRequestFullscreen).call(el); }
+  });
+  document.addEventListener('fullscreenchange', updateIcon);
+  document.addEventListener('webkitfullscreenchange', updateIcon);
+  updateIcon();
+})();
+
 bindTouch();
 requestAnimationFrame(loop);
 
