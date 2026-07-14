@@ -51,13 +51,22 @@ rain), **Bamboo Grove** (swaying stalks, stone lanterns, drifting autumn leaves)
 **World Combat Arena** (lit ring, camera flashes; winners get a 優勝 flourish). Decor is drawn
 procedurally — no image assets.
 
+## Belt ranks
+
+Belts are a shared rank table (`KYU_RANKS`/`DAN_RANKS` in `index.html`), not per-character colors:
+12th Kyu (White) up through 1st Kyu (Brown, black stripe), then Dan grades (Black). Some kyu grades
+carry a stripe or tip accent (e.g. 6th Kyu = Purple with a brown tip). A gi-wearing fighter's uniform
+follows rank automatically: **below Blue Belt** (White/Yellow/Orange/Green) wears **white pants with
+a black top**; **Blue Belt and above** (including all Dan grades) is **fully black**.
+
 ## Adding a character
 
 Every fighter is one object in the `CHARACTERS` array near the top of `index.html`. Copy an
-existing entry, change the fields (name, belt color, outfit, build, hair/beard, stats, special),
-and it shows up in character select automatically — the grid pages to fit any number. A brand-new
-kind of special needs a matching `case` in `doSpecial()`; reusing an existing special type needs
-no code changes.
+existing entry, change the fields (name, `beltRank` — an id from the belt table above, or `null`
+for no belt — outfit, build, hair/beard, stats, special), and it shows up in character select
+automatically, belt and gi colors included — the grid pages to fit any number. A brand-new kind of
+special needs a matching `case` in `doSpecial()`; reusing an existing special type needs no code
+changes.
 
 ## Credits
 

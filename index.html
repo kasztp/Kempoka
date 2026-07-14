@@ -37,27 +37,52 @@
 const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
 const W = 960, H = 540, GROUND = 476, GOLD = '#F5A800', INK = '#1a1a1a';
 
+// ---------- Belt ranks (12th-1st Kyu, then Dan) -------------------------------
+// ponytail: single source of truth for belt color/pattern. A character just
+// references an id below (or null = no belt); add a new rank here, not per-fighter.
+const KYU_RANKS = [
+  { id:'kyu12', kyu:12, label:'White Belt',                             color:'#f2ede0' },
+  { id:'kyu11', kyu:11, label:'Yellow Belt',                            color:'#e8c33a' },
+  { id:'kyu10', kyu:10, label:'Orange Belt',                            color:'#d9782a' },
+  { id:'kyu9',  kyu:9,  label:'Green Belt',                             color:'#3f8f4f' },
+  { id:'kyu8',  kyu:8,  label:'Blue Belt',                              color:'#2b6cb0' },
+  { id:'kyu7',  kyu:7,  label:'Purple Belt',                            color:'#6b3fa0' },
+  { id:'kyu6',  kyu:6,  label:'Purple Belt (brown tip)',                color:'#6b3fa0', tip:'#6b3f1d' },
+  { id:'kyu5',  kyu:5,  label:'Brown Belt (white stripe)',              color:'#6b3f1d', stripe:'#f2ede0' },
+  { id:'kyu4',  kyu:4,  label:'Brown Belt (white stripe, black tip)',   color:'#6b3f1d', stripe:'#f2ede0', tip:'#141414' },
+  { id:'kyu3',  kyu:3,  label:'Brown Belt',                             color:'#6b3f1d' },
+  { id:'kyu2',  kyu:2,  label:'Brown Belt (black tip)',                 color:'#6b3f1d', tip:'#141414' },
+  { id:'kyu1',  kyu:1,  label:'Brown Belt (black stripe)',              color:'#6b3f1d', stripe:'#141414' },
+];
+const DAN_RANKS = Array.from({length:5},(_,i)=>{ const n=i+1;
+  return { id:'dan'+n, dan:n, label:n+(n===1?'st':n===2?'nd':n===3?'rd':'th')+' Dan (Black Belt)', color:'#141414', tip:GOLD }; });
+const BELT_TABLE={}; [...KYU_RANKS,...DAN_RANKS].forEach(b=>BELT_TABLE[b.id]=b);
+function getBelt(rankId){ return rankId ? BELT_TABLE[rankId] : null; }
+// gi rule: below Blue belt = white pants + black top; Blue belt and up (incl. all Dan) = fully black
+function giAboveBlue(rankId){ const b=getBelt(rankId); return !b || b.dan!=null || b.kyu<=8; }
+const GI_BLACK='#161616', GI_WHITE='#e9e3d2';
+
 // ---------- Roster (add a character = add one object here) --------------------
 // ponytail: this array is the whole mod point. New fighter -> new entry. A novel
 // special needs a matching case in doSpecial(); reusing a type below needs no code.
 const CHARACTERS = [
-  { id:'rob', name:'Sensei Rob', belt:'#111', beltEdge:GOLD, outfit:'gi', gi:'#efe9dc',
+  { id:'rob', name:'Sensei Rob', beltRank:'dan1', outfit:'gi',
     build:{scale:1.02,girth:1.0}, skin:'#e8b98f', hair:{color:'#3a2a1a',style:'short'}, beard:false,
     stats:{maxHp:110,speed:1.05,power:1.05,defense:1.08},
     special:{name:'Renraku', type:'combo'} },
-  { id:'zsolti', name:'Zsolti', belt:'#6b3f1d', outfit:'gi', gi:'#f2ecdc',
+  { id:'zsolti', name:'Zsolti', beltRank:'kyu3', outfit:'gi',
     build:{scale:1.2,girth:1.45}, skin:'#e5b083', hair:{color:'#4a3320',style:'short'}, beard:true,
     stats:{maxHp:132,speed:0.82,power:1.3,defense:1.18},
     special:{name:'Ippon Seoi', type:'throw'} },
-  { id:'endre', name:'Endre', belt:'#6b3f1d', outfit:'gi', gi:'#ece6d6',
+  { id:'endre', name:'Endre', beltRank:'kyu3', outfit:'gi',
     build:{scale:0.86,girth:0.92}, skin:'#e3ab7d', hair:{color:'#241a12',style:'short'}, beard:false,
     stats:{maxHp:92,speed:1.2,power:1.38,defense:0.84},
     special:{name:'Tobi Tsuki', type:'lunge'} },
-  { id:'imi', name:'Imi', belt:null, outfit:'spandex', gi:'#16bcbc',
+  { id:'imi', name:'Imi', beltRank:null, outfit:'spandex', gi:'#16bcbc',
     build:{scale:1.0,girth:1.02}, skin:'#e6b489', hair:{color:'#2a2a2a',style:'short'}, beard:false,
     stats:{maxHp:106,speed:1.05,power:1.0,defense:1.0},
     special:{name:'Cleaver', type:'cleaver'} },
-  { id:'dori', name:'Dori', belt:'#e8c33a', outfit:'gi', gi:'#f4eee0',
+  { id:'dori', name:'Dori', beltRank:'kyu11', outfit:'gi',
     build:{scale:0.94,girth:0.9}, skin:'#f0c39c', hair:{color:'#b3401a',style:'braid'}, beard:false,
     stats:{maxHp:96,speed:1.32,power:0.86,defense:0.96},
     special:{name:'Mawashi Geri', type:'spin'} },
@@ -418,20 +443,27 @@ function drawFighter(f){
   else if(pose==='clinch'||pose==='choke'){ fHand=[0.34*h,-0.7*h]; bHand=[0.28*h,-0.62*h]; hip[0]=0.03*h; }
 
   const line=(a,b,w,col)=>{ ctx.strokeStyle=col; ctx.lineWidth=w; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke(); };
+  const isGi=c.outfit==='gi';
+  const pantsColor = isGi ? (giAboveBlue(c.beltRank)?GI_BLACK:GI_WHITE) : '#2b2b2b';
+  const topColor = isGi ? GI_BLACK : c.gi;
   // legs (front leg bends at the knee for kicks)
-  if(fKnee){ line(hip,fKnee,8*g,'#2b2b2b'); line(fKnee,fFoot,7*g,'#2b2b2b'); } else line(hip,fFoot,8*g,'#2b2b2b');
-  line(hip,bFoot,8*g,'#242424');
+  if(fKnee){ line(hip,fKnee,8*g,pantsColor); line(fKnee,fFoot,7*g,pantsColor); } else line(hip,fFoot,8*g,pantsColor);
+  line(hip,bFoot,8*g,shade(pantsColor,-10));
   // torso (outfit)
-  ctx.strokeStyle=c.gi; ctx.lineWidth=22*g; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(hip[0],hip[1]); ctx.lineTo(sh[0],sh[1]); ctx.stroke();
-  if(c.outfit==='gi'){ // lapel hint
-    ctx.strokeStyle='rgba(0,0,0,.15)'; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(sh[0],sh[1]); ctx.lineTo(hip[0]+2,hip[1]); ctx.stroke();
+  ctx.strokeStyle=topColor; ctx.lineWidth=22*g; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(hip[0],hip[1]); ctx.lineTo(sh[0],sh[1]); ctx.stroke();
+  if(isGi){ // lapel hint
+    ctx.strokeStyle='rgba(255,255,255,.14)'; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(sh[0],sh[1]); ctx.lineTo(hip[0]+2,hip[1]); ctx.stroke();
   }
   // belt
-  if(c.belt){ ctx.strokeStyle=c.belt; ctx.lineWidth=8*g; ctx.beginPath(); ctx.moveTo(hip[0]-11*g,hip[1]-4); ctx.lineTo(hip[0]+11*g,hip[1]-4); ctx.stroke();
-    if(c.beltEdge){ ctx.strokeStyle=c.beltEdge; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(hip[0]-11*g,hip[1]-8); ctx.lineTo(hip[0]+11*g,hip[1]-8); ctx.stroke(); } }
+  const belt=getBelt(c.beltRank);
+  if(belt){ const bx0=hip[0]-11*g, bx1=hip[0]+11*g, by=hip[1]-4;
+    ctx.strokeStyle=belt.color; ctx.lineWidth=8*g; ctx.beginPath(); ctx.moveTo(bx0,by); ctx.lineTo(bx1,by); ctx.stroke();
+    if(belt.stripe){ ctx.strokeStyle=belt.stripe; ctx.lineWidth=2.5; ctx.beginPath(); ctx.moveTo(bx0,by-3.5); ctx.lineTo(bx1,by-3.5); ctx.stroke(); }
+    if(belt.tip){ ctx.strokeStyle=belt.tip; ctx.lineWidth=8*g; ctx.beginPath(); ctx.moveTo(bx1-6*g,by); ctx.lineTo(bx1,by); ctx.stroke(); }
+  }
   // arms
-  line(sh,bHand,7*g,shade(c.gi,-20));
-  line(sh,fHand,7*g,c.gi);
+  line(sh,bHand,7*g,shade(topColor,-20));
+  line(sh,fHand,7*g,topColor);
   // hands
   ctx.fillStyle=c.skin; [fHand,bHand].forEach(hd=>{ ctx.beginPath(); ctx.arc(hd[0],hd[1],4.5,0,7); ctx.fill(); });
   // cleaver (Imi active)
@@ -601,7 +633,11 @@ function drawSelect(){
     drawPortrait(c,x+cw/2,y+chh-30,72/(132*c.build.scale));   // normalize height so tall fighters don't reach the name/belt
     ctx.fillStyle=GOLD; ctx.font='bold 18px "Trebuchet MS"'; ctx.textAlign='center'; ctx.fillText(c.name,x+cw/2,y+22);
     // belt swatch
-    ctx.fillStyle=c.belt||'#eee'; ctx.fillRect(x+cw/2-24,y+30,48,7); ctx.strokeStyle='#0006'; ctx.strokeRect(x+cw/2-24,y+30,48,7);
+    const belt=getBelt(c.beltRank), sw0=x+cw/2-24, sw1=x+cw/2+24;
+    ctx.fillStyle=belt?belt.color:'#3a3a3a'; ctx.fillRect(sw0,y+30,48,7);
+    if(belt&&belt.stripe){ ctx.fillStyle=belt.stripe; ctx.fillRect(sw0,y+28,48,2); }
+    if(belt&&belt.tip){ ctx.fillStyle=belt.tip; ctx.fillRect(sw1-8,y+30,8,7); }
+    ctx.strokeStyle='#0006'; ctx.strokeRect(sw0,y+30,48,7);
     // special
     ctx.fillStyle='#e8c33a'; ctx.font='bold 12px "Trebuchet MS"'; ctx.fillText('★ '+c.special.name, x+cw/2, y+chh-8);
     buttons.push({x,y,w:cw,h:chh,fn:()=>chooseFighter(idx),label:'',active:false});
