@@ -19,6 +19,14 @@
   #tUp{left:16px;bottom:104px}#tDown{left:96px;bottom:104px}
   #tPunch{right:96px;bottom:104px}#tKick{right:16px;bottom:104px}
   #tBlock{right:136px;bottom:24px}#tSpecial{right:56px;bottom:24px}#tGrab{right:16px;bottom:184px}
+  /* fighter-creation form overlay (native inputs positioned over the canvas) */
+  #createUI { position:fixed; inset:0; display:none; pointer-events:none; z-index:20; }
+  #createUI.on { display:block; }
+  .cfield { position:fixed; pointer-events:auto; box-sizing:border-box; background:#20180f; color:#f2ede0;
+    border:1px solid rgba(245,168,0,.6); border-radius:4px; font:13px "Trebuchet MS"; padding:0 6px; }
+  input.cfield[type=color] { padding:2px; }
+  input.cfield[type=range] { background:transparent; border:none; padding:0; accent-color:#F5A800; }
+  select.cfield { padding:0 4px; }
 </style>
 <div id="wrap"><canvas id="cv" width="960" height="540"></canvas></div>
 <div id="touch">
@@ -31,6 +39,20 @@
   <div class="tbtn wide" id="tBlock" data-k="block">BLK</div>
   <div class="tbtn wide" id="tSpecial" data-k="special">SP</div>
   <div class="tbtn wide" id="tGrab" data-k="grab">GRAB</div>
+</div>
+<div id="createUI">
+  <input id="cfName" class="cfield" type="text" maxlength="16" placeholder="Fighter name">
+  <input id="cfSpecialName" class="cfield" type="text" maxlength="22" placeholder="Special move name">
+  <input id="cfSkin" class="cfield" type="color">
+  <input id="cfHairColor" class="cfield" type="color">
+  <input id="cfOutfitColor" class="cfield" type="color">
+  <input id="cfHp" class="cfield" type="range" min="80" max="140" step="2">
+  <input id="cfSpeed" class="cfield" type="range" min="0.8" max="1.35" step="0.01">
+  <input id="cfPower" class="cfield" type="range" min="0.8" max="1.4" step="0.01">
+  <input id="cfDefense" class="cfield" type="range" min="0.8" max="1.2" step="0.01">
+  <input id="cfScale" class="cfield" type="range" min="0.8" max="1.25" step="0.01">
+  <input id="cfGirth" class="cfield" type="range" min="0.75" max="1.5" step="0.01">
+  <select id="cfSpecialType" class="cfield"></select>
 </div>
 <script>
 "use strict";
@@ -61,6 +83,8 @@ function getBelt(rankId){ return rankId ? BELT_TABLE[rankId] : null; }
 // gi rule: below Blue belt = white pants + black top; Blue belt and up (incl. all Dan) = fully black
 function giAboveBlue(rankId){ const b=getBelt(rankId); return !b || b.dan!=null || b.kyu<=8; }
 const GI_BLACK='#161616', GI_WHITE='#e9e3d2';
+const BELT_CHOICES=[null, ...KYU_RANKS.map(b=>b.id), ...DAN_RANKS.map(b=>b.id)];
+function beltLabel(id){ const b=getBelt(id); return b?b.label:'No Belt'; }
 
 // ---------- Roster (add a character = add one object here) --------------------
 // ponytail: this array is the whole mod point. New fighter -> new entry. A novel
@@ -87,6 +111,26 @@ const CHARACTERS = [
     stats:{maxHp:96,speed:1.32,power:0.86,defense:0.96},
     special:{name:'Mawashi Geri', type:'spin'} },
 ];
+
+// ---------- Character persistence ---------------------------------------------
+// ponytail: localStorage-backed for now, but every call returns a Promise — a future
+// fetch()-based cloud store (shared roster across players) is a drop-in swap; nothing
+// that calls CharacterStore assumes synchronous storage.
+const CharacterStore = (()=>{
+  const KEY='kmp_custom_characters';
+  function readAll(){ try{ return JSON.parse(localStorage.getItem(KEY)||'[]'); }catch(e){ return []; } }
+  function writeAll(list){ localStorage.setItem(KEY, JSON.stringify(list)); }
+  return {
+    list(){ return Promise.resolve(readAll()); },
+    save(char){ const all=readAll(); const i=all.findIndex(c=>c.id===char.id); if(i>=0) all[i]=char; else all.push(char); writeAll(all); return Promise.resolve(char); },
+    remove(id){ writeAll(readAll().filter(c=>c.id!==id)); return Promise.resolve(); },
+  };
+})();
+// ROSTER = built-ins + custom fighters; everything that lists/selects a fighter reads
+// this (not CHARACTERS directly), so a custom fighter shows up everywhere automatically.
+let customCharacters=[], ROSTER=CHARACTERS.slice();
+function refreshRoster(){ ROSTER=CHARACTERS.concat(customCharacters); }
+CharacterStore.list().then(list=>{ customCharacters=list; refreshRoster(); });
 
 // ---------- Move tables ------------------------------------------------------
 // MOVES = bases used by specials. PUNCHES / KICKS = normal attacks, keyed by the
@@ -163,8 +207,9 @@ const Audio = (()=>{
 const keys=new Set();
 const KEYMAP={KeyA:1,KeyD:1,KeyW:1,KeyS:1,KeyJ:1,KeyK:1,KeyL:1,KeyU:1,KeyI:1,
   ArrowLeft:1,ArrowRight:1,ArrowUp:1,ArrowDown:1,Numpad1:1,Numpad2:1,Numpad3:1,Numpad0:1,Numpad4:1,Enter:1,Space:1};
-addEventListener('keydown',e=>{ if(KEYMAP[e.code]) e.preventDefault(); keys.add(e.code); Audio.ensure(); });
-addEventListener('keyup',e=>keys.delete(e.code));
+function isFormField(e){ const tag=(e.target&&e.target.tagName)||''; return tag==='INPUT'||tag==='SELECT'||tag==='TEXTAREA'; }
+addEventListener('keydown',e=>{ if(isFormField(e)) return; if(KEYMAP[e.code]) e.preventDefault(); keys.add(e.code); Audio.ensure(); });
+addEventListener('keyup',e=>{ if(isFormField(e)) return; keys.delete(e.code); });
 const touch={};
 let touchMode = localStorage.kmp_touch || 'auto';   // 'auto' | 'on' | 'off'
 function touchAuto(){ try{ return matchMedia('(pointer: coarse)').matches; }catch(e){ return ('ontouchstart' in window)||navigator.maxTouchPoints>0; } }
@@ -474,7 +519,7 @@ function drawFighter(f){
   ctx.fillStyle=c.hair.color;
   if(c.hair.style==='braid'){ ctx.beginPath(); ctx.arc(head[0],head[1]-headR*0.3,headR,Math.PI,0); ctx.fill();
     ctx.lineWidth=6; ctx.strokeStyle=c.hair.color; ctx.beginPath(); ctx.moveTo(head[0]-headR*0.8,head[1]); ctx.quadraticCurveTo(head[0]-headR*2,head[1]+headR,head[0]-headR*1.4,head[1]+headR*2.4); ctx.stroke(); }
-  else { ctx.beginPath(); ctx.arc(head[0],head[1]-headR*0.25,headR*0.98,Math.PI,0); ctx.fill(); }
+  else if(c.hair.style!=='bald'){ ctx.beginPath(); ctx.arc(head[0],head[1]-headR*0.25,headR*0.98,Math.PI,0); ctx.fill(); }
   // beard
   if(c.beard){ ctx.fillStyle=c.hair.color; ctx.beginPath(); ctx.arc(head[0],head[1]+headR*0.5,headR*0.75,0,Math.PI); ctx.fill(); }
   ctx.restore();
@@ -489,7 +534,8 @@ let buttons=[]; // clickable rects for current scene
 function btn(x,y,w,h,label,fn,active){ buttons.push({x,y,w,h,label,fn,active}); }
 function drawBtn(b){ ctx.save(); ctx.fillStyle=b.active?GOLD:'rgba(245,168,0,.12)'; ctx.strokeStyle=GOLD; ctx.lineWidth=2;
   roundRect(b.x,b.y,b.w,b.h,8); ctx.fill(); ctx.stroke();
-  ctx.fillStyle=b.active?INK:GOLD; ctx.font='bold 22px "Trebuchet MS"'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  const fs=Math.max(11,Math.min(22,Math.round(b.h*0.55)));
+  ctx.fillStyle=b.active?INK:GOLD; ctx.font='bold '+fs+'px "Trebuchet MS"'; ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.fillText(b.label,b.x+b.w/2,b.y+b.h/2); ctx.restore(); }
 function roundRect(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
 function hit(b,p){ return p.x>=b.x&&p.x<=b.x+b.w&&p.y>=b.y&&p.y<=b.y+b.h; }
@@ -566,18 +612,19 @@ function drawWatermark(cx,cy,r,alpha){ if(!logoOk) return; ctx.save(); ctx.globa
 // ---- menu ----
 function drawMenu(){
   buttons=[]; bg2();
-  if(logoOk){ const s=160; ctx.drawImage(logo,W/2-s/2,40,s,s); }
-  ctx.fillStyle=GOLD; ctx.textAlign='center'; ctx.font='bold 44px "Trebuchet MS"';
-  ctx.fillText('KEMPOKA',W/2,244);
-  ctx.font='italic 17px "Trebuchet MS"'; ctx.fillStyle='#d8c9a0';
-  ctx.fillText('The Chosen Ones · Zen Bu Kan Kempo',W/2,268);
-  btn(W/2-150,300,300,50,'1 PLAYER',()=>{mode='1p';gotoSelect();},false);
-  btn(W/2-150,356,300,50,'2 PLAYERS',()=>{mode='2p';gotoSelect();},false);
-  btn(W/2-150,412,300,44,'CONTROLS',()=>{state='controls';},false);
-  btn(W/2-150,466,145,42,'MUSIC: '+(Audio.musicOn?'ON':'OFF'),()=>Audio.toggleMusic(),Audio.musicOn);
-  btn(W/2+5,466,145,42,'SFX: '+(Audio.sfxOn?'ON':'OFF'),()=>Audio.toggleSfx(),Audio.sfxOn);
+  if(logoOk){ const s=128; ctx.drawImage(logo,W/2-s/2,18,s,s); }
+  ctx.fillStyle=GOLD; ctx.textAlign='center'; ctx.font='bold 38px "Trebuchet MS"';
+  ctx.fillText('KEMPOKA',W/2,178);
+  ctx.font='italic 15px "Trebuchet MS"'; ctx.fillStyle='#d8c9a0';
+  ctx.fillText('The Chosen Ones · Zen Bu Kan Kempo',W/2,200);
+  hairline(214);
+  btn(W/2-150,228,300,44,'1 PLAYER',()=>{mode='1p';gotoSelect();},false);
+  btn(W/2-150,278,300,44,'2 PLAYERS',()=>{mode='2p';gotoSelect();},false);
+  btn(W/2-150,328,300,40,'CREATE FIGHTER',()=>enterCreate(),false);
+  btn(W/2-150,374,300,38,'CONTROLS',()=>{state='controls';},false);
+  btn(W/2-150,422,145,38,'MUSIC: '+(Audio.musicOn?'ON':'OFF'),()=>Audio.toggleMusic(),Audio.musicOn);
+  btn(W/2+5,422,145,38,'SFX: '+(Audio.sfxOn?'ON':'OFF'),()=>Audio.toggleSfx(),Audio.sfxOn);
   buttons.forEach(drawBtn);
-  hairline(286);
 }
 // ---- controls screen ----
 function drawControls(){
@@ -614,24 +661,171 @@ function drawControls(){
 function bg2(){ const grd=ctx.createRadialGradient(W/2,240,60,W/2,240,600); grd.addColorStop(0,'#242015'); grd.addColorStop(1,INK); ctx.fillStyle=grd; ctx.fillRect(0,0,W,H); }
 function hairline(y){ ctx.strokeStyle='rgba(245,168,0,.5)'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(W/2-220,y); ctx.lineTo(W/2+220,y); ctx.stroke(); }
 
+// ---- create fighter ----
+const SPECIAL_TYPES=[   // reuses existing engine mechanics — a custom fighter needs no new code, just a type pick
+  {type:'combo',   label:'Combo Strike — jab, cross, roundhouse chain'},
+  {type:'throw',   label:'Judo Throw — lunge into a clinch throw'},
+  {type:'lunge',   label:'Lunging Strike — dashing heavy hit'},
+  {type:'spin',    label:'Spinning Kick — advancing roundhouse'},
+  {type:'cleaver', label:'Comeback Weapon — bonus reach/damage under 30% HP'},
+];
+SPECIAL_TYPES.forEach(s=>{ const o=document.createElement('option'); o.value=s.type; o.textContent=s.label; document.getElementById('cfSpecialType').appendChild(o); });
+const $=id=>document.getElementById(id);
+const createUI={ name:$('cfName'), specialName:$('cfSpecialName'), skin:$('cfSkin'), hairColor:$('cfHairColor'), outfitColor:$('cfOutfitColor'),
+  hp:$('cfHp'), speed:$('cfSpeed'), power:$('cfPower'), defense:$('cfDefense'), scale:$('cfScale'), girth:$('cfGirth'), specialType:$('cfSpecialType') };
+const SKIN_TONES=['#e8b98f','#e5b083','#e3ab7d','#f0c39c','#c98a5e','#a56b3f','#7a4a2b'];
+const HAIR_COLORS=['#2a2a2a','#3a2a1a','#4a3320','#b3401a','#5c4033','#1a1a1a','#8a6d3b'];
+const SPANDEX_COLORS=['#16bcbc','#c0392b','#8e44ad','#2980b9','#27ae60','#e67e22','#2c3e50'];
+const NAME_A=['Ken','Rai','Sho','Hana','Taka','Vik','Zan','Miko','Dai','Ryo','Kaze','Suzu','Bora','Iso'];
+const NAME_B=['ji','to','ra','mi','shi','ta','ko','n','zo','ki','ra','ma','shu'];
+const SPECIAL_NAMES=['Raiden Strike','Shadow Fang','Iron Wave','Crimson Fist','Silent Storm','Dragon Coil','Falcon Dive','Thunder Palm','Serpent Crush','Hollow Point'];
+function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+function randomFighterName(){ return pick(NAME_A)+pick(NAME_B); }
+
+let draft=null, editingId=null;
+function newDraft(){ return {
+  id:'custom_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
+  name:'', beltRank:'kyu12', outfit:'gi',
+  build:{scale:1.0,girth:1.0}, skin:SKIN_TONES[0], hair:{color:HAIR_COLORS[0],style:'short'}, beard:false,
+  gi:SPANDEX_COLORS[0],
+  stats:{maxHp:100,speed:1.0,power:1.0,defense:1.0},
+  special:{name:'Special',type:'combo'},
+  custom:true,
+}; }
+function enterCreate(){ Audio.sfx('click'); state='create'; draft=newDraft(); editingId=null; syncUIFromDraft(); }
+function editCustom(c){ Audio.sfx('click'); draft=JSON.parse(JSON.stringify(c)); editingId=c.id; syncUIFromDraft(); }
+function deleteCustom(id){ Audio.sfx('click'); CharacterStore.remove(id).then(()=>{
+  customCharacters=customCharacters.filter(c=>c.id!==id); refreshRoster();
+  if(editingId===id){ draft=newDraft(); editingId=null; syncUIFromDraft(); } }); }
+function saveDraft(){
+  draft.name=(createUI.name.value||'').trim() || 'New Fighter';
+  draft.special.name=(createUI.specialName.value||'').trim() || 'Special';
+  CharacterStore.save(draft).then(saved=>{
+    const i=customCharacters.findIndex(c=>c.id===saved.id);
+    if(i>=0) customCharacters[i]=saved; else customCharacters.push(saved);
+    refreshRoster(); Audio.sfx('win'); state='menu';
+  });
+}
+function randomizeDraft(){
+  draft.name=randomFighterName();
+  draft.beltRank=pick(BELT_CHOICES);
+  draft.outfit=Math.random()<0.75?'gi':'spandex';
+  draft.build.scale=+(0.82+Math.random()*0.4).toFixed(2);
+  draft.build.girth=+(0.8+Math.random()*0.65).toFixed(2);
+  draft.skin=pick(SKIN_TONES); draft.hair.color=pick(HAIR_COLORS); draft.hair.style=pick(['short','braid','bald']);
+  draft.beard=Math.random()<0.3;
+  draft.gi=pick(SPANDEX_COLORS);
+  draft.stats.maxHp=Math.round(84+Math.random()*52);
+  draft.stats.speed=+(0.85+Math.random()*0.45).toFixed(2);
+  draft.stats.power=+(0.85+Math.random()*0.5).toFixed(2);
+  draft.stats.defense=+(0.85+Math.random()*0.3).toFixed(2);
+  draft.special.type=pick(SPECIAL_TYPES).type;
+  draft.special.name=pick(SPECIAL_NAMES);
+  syncUIFromDraft(); Audio.sfx('click');
+}
+function syncUIFromDraft(){
+  createUI.name.value=draft.name; createUI.specialName.value=draft.special.name;
+  createUI.skin.value=draft.skin; createUI.hairColor.value=draft.hair.color; createUI.outfitColor.value=draft.gi;
+  createUI.hp.value=draft.stats.maxHp; createUI.speed.value=draft.stats.speed; createUI.power.value=draft.stats.power; createUI.defense.value=draft.stats.defense;
+  createUI.scale.value=draft.build.scale; createUI.girth.value=draft.build.girth;
+  createUI.specialType.value=draft.special.type;
+}
+function readUIIntoDraft(){
+  draft.name=createUI.name.value; draft.special.name=createUI.specialName.value;
+  draft.skin=createUI.skin.value; draft.hair.color=createUI.hairColor.value; draft.gi=createUI.outfitColor.value;
+  draft.stats.maxHp=parseFloat(createUI.hp.value); draft.stats.speed=parseFloat(createUI.speed.value);
+  draft.stats.power=parseFloat(createUI.power.value); draft.stats.defense=parseFloat(createUI.defense.value);
+  draft.build.scale=parseFloat(createUI.scale.value); draft.build.girth=parseFloat(createUI.girth.value);
+  draft.special.type=createUI.specialType.value;
+}
+function canvasScale(){ const r=cv.getBoundingClientRect(); return {r, sx:r.width/W, sy:r.height/H}; }
+function placeEl(el,lx,ly,lw,lh){ const {r,sx,sy}=canvasScale();
+  el.style.left=(r.left+lx*sx)+'px'; el.style.top=(r.top+ly*sy)+'px';
+  el.style.width=(lw*sx)+'px'; el.style.height=(lh*sy)+'px'; }
+
+function drawCreate(){
+  buttons=[]; bg2(); readUIIntoDraft();
+  ctx.fillStyle=GOLD; ctx.textAlign='center'; ctx.font='bold 28px "Trebuchet MS"'; ctx.fillText('CREATE FIGHTER',W/2,38); hairline(52);
+  ctx.textAlign='left';
+
+  // left column: identity
+  ctx.fillStyle=GOLD; ctx.font='bold 13px "Trebuchet MS"'; ctx.fillText('NAME',60,74); placeEl(createUI.name,60,80,230,28);
+  ctx.fillText('BELT RANK',60,126);
+  btn(60,132,26,26,'◀',()=>{ const i=BELT_CHOICES.indexOf(draft.beltRank); draft.beltRank=BELT_CHOICES[(i-1+BELT_CHOICES.length)%BELT_CHOICES.length]; },false);
+  btn(316,132,26,26,'▶',()=>{ const i=BELT_CHOICES.indexOf(draft.beltRank); draft.beltRank=BELT_CHOICES[(i+1)%BELT_CHOICES.length]; },false);
+  ctx.fillStyle='#e6dcc0'; ctx.font='13px "Trebuchet MS"'; ctx.textAlign='center'; ctx.fillText(beltLabel(draft.beltRank),188,150); ctx.textAlign='left';
+  const pvBelt=getBelt(draft.beltRank);
+  ctx.fillStyle=pvBelt?pvBelt.color:'#3a3a3a'; ctx.fillRect(60,166,120,9);
+  if(pvBelt&&pvBelt.stripe){ ctx.fillStyle=pvBelt.stripe; ctx.fillRect(60,164,120,2.5); }
+  if(pvBelt&&pvBelt.tip){ ctx.fillStyle=pvBelt.tip; ctx.fillRect(160,166,20,9); }
+  btn(60,188,110,30,draft.outfit==='gi'?'GI':'SPANDEX',()=>{ draft.outfit=draft.outfit==='gi'?'spandex':'gi'; },false);
+  btn(180,188,86,30,draft.hair.style.toUpperCase(),()=>{ const order=['short','braid','bald']; draft.hair.style=order[(order.indexOf(draft.hair.style)+1)%order.length]; },false);
+  btn(276,188,84,30,'BEARD '+(draft.beard?'ON':'OFF'),()=>{ draft.beard=!draft.beard; },draft.beard);
+  ctx.fillStyle=GOLD; ctx.font='bold 12px "Trebuchet MS"';
+  ctx.fillText('SKIN',60,228); placeEl(createUI.skin,60,232,50,30);
+  ctx.fillText('HAIR',124,228); placeEl(createUI.hairColor,124,232,50,30);
+  if(draft.outfit==='spandex'){ ctx.fillText('OUTFIT COLOR',188,228); placeEl(createUI.outfitColor,188,232,60,30); createUI.outfitColor.style.display='block'; }
+  else createUI.outfitColor.style.display='none';
+
+  // right column: stats / build / special
+  const RX=470;
+  const statRow=(y,label,val,el)=>{ ctx.fillStyle='#e6dcc0'; ctx.font='12px "Trebuchet MS"'; ctx.fillText(label+': '+val,RX,y-6); placeEl(el,RX,y,300,18); };
+  ctx.fillStyle=GOLD; ctx.font='bold 15px "Trebuchet MS"'; ctx.fillText('STATS',RX,74);
+  statRow(104,'HP',      draft.stats.maxHp,              createUI.hp);
+  statRow(138,'Speed',   draft.stats.speed.toFixed(2),   createUI.speed);
+  statRow(172,'Power',   draft.stats.power.toFixed(2),   createUI.power);
+  statRow(206,'Defense', draft.stats.defense.toFixed(2), createUI.defense);
+  ctx.fillStyle=GOLD; ctx.font='bold 15px "Trebuchet MS"'; ctx.fillText('BUILD',RX,240);
+  statRow(264,'Height',  draft.build.scale.toFixed(2),   createUI.scale);
+  statRow(298,'Girth',   draft.build.girth.toFixed(2),   createUI.girth);
+  ctx.fillStyle=GOLD; ctx.font='bold 15px "Trebuchet MS"'; ctx.fillText('SPECIAL MOVE',RX,332);
+  ctx.fillStyle='#e6dcc0'; ctx.font='12px "Trebuchet MS"'; ctx.fillText('Type',RX,350); placeEl(createUI.specialType,RX,354,300,28);
+  ctx.fillText('Name',RX,396); placeEl(createUI.specialName,RX,400,300,26);
+
+  // live preview
+  ctx.fillStyle=GOLD; ctx.textAlign='center'; ctx.font='bold 13px "Trebuchet MS"'; ctx.fillText('PREVIEW',885,64);
+  drawPortrait(draft,885,235,1.0);
+  ctx.fillStyle='#e8c33a'; ctx.font='bold 12px "Trebuchet MS"'; ctx.fillText('★ '+(draft.special.name||'Special'),885,258);
+  ctx.textAlign='left';
+
+  // my fighters — manage saved custom fighters (edit / delete); they also show up in fighter select
+  ctx.fillStyle=GOLD; ctx.font='bold 14px "Trebuchet MS"'; ctx.fillText('MY FIGHTERS',60,436);
+  const shown=customCharacters.slice(-2).reverse();
+  if(!shown.length){ ctx.fillStyle='#8a7d5c'; ctx.font='12px "Trebuchet MS"'; ctx.fillText('None yet — create your first fighter above.',60,456); }
+  shown.forEach((c,i)=>{ const y=452+i*20;
+    ctx.fillStyle=editingId===c.id?'#fff':'#e6dcc0'; ctx.font='13px "Trebuchet MS"'; ctx.fillText(c.name,60,y+13);
+    const b=getBelt(c.beltRank); ctx.fillStyle=b?b.color:'#3a3a3a'; ctx.fillRect(220,y+3,30,10);
+    btn(760,y-1,60,18,'EDIT',()=>editCustom(c),false);
+    btn(826,y-1,30,18,'×',()=>deleteCustom(c.id),false);
+  });
+  if(customCharacters.length>shown.length){ ctx.fillStyle='#8a7d5c'; ctx.font='11px "Trebuchet MS"';
+    ctx.fillText('+'+(customCharacters.length-shown.length)+' more (also visible in fighter select)',60,492); }
+
+  btn(60,500,170,34,'🎲 RANDOMIZE',randomizeDraft,false);
+  btn(395,500,190,34,'SAVE FIGHTER',saveDraft,true);
+  btn(760,500,140,34,'‹ BACK',()=>{ state='menu'; },false);
+  buttons.forEach(drawBtn);
+}
+
 // ---- character select ----
 function gotoSelect(){ state='select'; selPhase=0; sel=[0,0]; page=0; Audio.startMusic(); }
 const PER_PAGE=8, COLS=4;
 function drawSelect(){
   buttons=[]; bg2();
-  ctx.fillStyle=GOLD; ctx.textAlign='center'; ctx.font='bold 30px "Trebuchet MS"';
-  ctx.fillText(mode==='2p'?(selPhase===0?'PLAYER 1 — CHOOSE':'PLAYER 2 — CHOOSE'):'CHOOSE YOUR FIGHTER',W/2,58);
+  const title = selPhase===0 ? 'CHOOSE YOUR FIGHTER' : (mode==='1p' ? 'CHOOSE CPU OPPONENT' : 'PLAYER 2 — CHOOSE');
+  ctx.fillStyle=GOLD; ctx.textAlign='center'; ctx.font='bold 30px "Trebuchet MS"'; ctx.fillText(title,W/2,58);
   hairline(74);
-  const pages=Math.ceil(CHARACTERS.length/PER_PAGE);
-  const start=page*PER_PAGE, cw=180, chh=150, gap=18, rows=Math.ceil(Math.min(PER_PAGE,CHARACTERS.length-start)/COLS);
+  const pages=Math.ceil(ROSTER.length/PER_PAGE);
+  const start=page*PER_PAGE, cw=180, chh=150, gap=18, rows=Math.ceil(Math.min(PER_PAGE,ROSTER.length-start)/COLS);
   const gridW=COLS*cw+(COLS-1)*gap, x0=(W-gridW)/2, y0=110;
-  for(let i=0;i<PER_PAGE;i++){ const idx=start+i; if(idx>=CHARACTERS.length) break;
+  for(let i=0;i<PER_PAGE;i++){ const idx=start+i; if(idx>=ROSTER.length) break;
     const col=i%COLS, row=Math.floor(i/COLS); const x=x0+col*(cw+gap), y=y0+row*(chh+gap);
-    const c=CHARACTERS[idx]; const chosenP1 = mode==='2p'&&selPhase===1&&sel[0]===idx;
+    const c=ROSTER[idx]; const chosenP1 = selPhase===1 && sel[0]===idx;
     ctx.save(); ctx.fillStyle='rgba(245,168,0,.08)'; ctx.strokeStyle=chosenP1?'#888':GOLD; ctx.lineWidth=chosenP1?2:2.5;
     roundRect(x,y,cw,chh,10); ctx.fill(); ctx.stroke(); ctx.restore();
     drawPortrait(c,x+cw/2,y+chh-30,72/(132*c.build.scale));   // normalize height so tall fighters don't reach the name/belt
     ctx.fillStyle=GOLD; ctx.font='bold 18px "Trebuchet MS"'; ctx.textAlign='center'; ctx.fillText(c.name,x+cw/2,y+22);
+    if(c.custom){ ctx.fillStyle='#7bdcff'; ctx.beginPath(); ctx.arc(x+cw-14,y+14,6,0,7); ctx.fill(); }   // custom-fighter badge
     // belt swatch
     const belt=getBelt(c.beltRank), sw0=x+cw/2-24, sw1=x+cw/2+24;
     ctx.fillStyle=belt?belt.color:'#3a3a3a'; ctx.fillRect(sw0,y+30,48,7);
@@ -645,21 +839,22 @@ function drawSelect(){
   if(pages>1){ btn(x0,y0+rows*(chh+gap)+6,120,40,'◀ PREV',()=>{page=(page-1+pages)%pages;},false);
     btn(x0+gridW-120,y0+rows*(chh+gap)+6,120,40,'NEXT ▶',()=>{page=(page+1)%pages;},false);
     ctx.fillStyle='#d8c9a0'; ctx.font='16px "Trebuchet MS"'; ctx.fillText('page '+(page+1)+'/'+pages,W/2,y0+rows*(chh+gap)+30); }
-  buttons.filter(b=>b.label).forEach(drawBtn);
+  if(mode==='1p' && selPhase===1) btn(W/2-100,H-52,200,38,'🎲 RANDOM CPU',pickRandomCpu,false);
   btn(20,H-52,110,38,'‹ BACK',()=>{ if(selPhase===1){selPhase=0;} else {state='menu';} },false);
-  drawBtn(buttons[buttons.length-1]);
+  btn(W-150,H-52,130,38,'+ CREATE',()=>enterCreate(),false);
+  buttons.filter(b=>b.label).forEach(drawBtn);
 }
 function drawPortrait(c,cx,cy,scale){ const f={char:c,x:cx,y:cy,facing:1,vx:0,anim:0,cleaver:0,action:null,grab:null,down:0,stun:0,blocking:false,crouching:false,onGround:true};
   ctx.save(); ctx.translate(cx,cy); ctx.scale(scale,scale); ctx.translate(-cx,-cy); drawFighter(f); ctx.restore(); }
 function chooseFighter(idx){ Audio.sfx('click');
-  if(mode==='1p'){ sel[0]=idx; sel[1]=Math.floor(Math.random()*CHARACTERS.length); startFight(); }
-  else { if(selPhase===0){ sel[0]=idx; selPhase=1; } else { sel[1]=idx; startFight(); } } }
+  if(selPhase===0){ sel[0]=idx; selPhase=1; page=0; } else { sel[1]=idx; startFight(); } }
+function pickRandomCpu(){ Audio.sfx('click'); sel[1]=Math.floor(Math.random()*ROSTER.length); startFight(); }
 
 // ---- fight ----
 function startFight(){ state='fight';
   stageIndex = matchCount % STAGES.length; matchCount++;   // next stage in sequence, one per fight
-  F[0]=makeFighter(CHARACTERS[sel[0]],0,W*0.32);
-  F[1]=makeFighter(CHARACTERS[sel[1]],1,W*0.68);
+  F[0]=makeFighter(ROSTER[sel[0]],0,W*0.32);
+  F[1]=makeFighter(ROSTER[sel[1]],1,W*0.68);
   roundTimer=ROUND_TIME; matchOver=false; koFreeze=0; introTimer=2.0; Audio.startMusic(); Audio.sfx('bell');
 }
 let introTimer=0;
@@ -738,11 +933,13 @@ function loop(now){ DT=Math.min(0.05,(now-last)/1000); last=now;
   handleClick();
   if(state==='menu') drawMenu();
   else if(state==='controls') drawControls();
+  else if(state==='create') drawCreate();
   else if(state==='select') drawSelect();
   else if(state==='fight'){ updateFight(); drawFight(); }
   else if(state==='result') drawResult();
   // on-screen pad: only where it's usable (a live fight) or being previewed on the controls screen
   document.getElementById('touch').classList.toggle('on', wantTouch() && (state==='fight'||state==='controls'));
+  document.getElementById('createUI').classList.toggle('on', state==='create');
   requestAnimationFrame(loop);
 }
 bindTouch();
@@ -761,11 +958,21 @@ function runSelfCheck(){
            && moveDir(a,{right:true})==='toward' && moveDir(a,{left:true})==='back' && moveDir(a,{})==='neutral';
   F[0]=null; F[1]=null;
   const ok6 = KICKS.up.name==='Head kick' && PUNCHES.up.launch<0;   // tables wired
-  const pass=ok1&&ok2&&ok3&&ok4&&ok5&&ok6;
+  const ok7 = ROSTER.length>=CHARACTERS.length && ROSTER[0]===CHARACTERS[0];   // roster combiner sane
+  const pass=ok1&&ok2&&ok3&&ok4&&ok5&&ok6&&ok7;
   console.assert(ok1,'block should reduce damage'); console.assert(ok2,'rect overlap'); console.assert(ok3,'grab fails at range'); console.assert(ok4,'grab works in range');
-  console.assert(ok5,'moveDir maps directions'); console.assert(ok6,'move tables wired');
+  console.assert(ok5,'moveDir maps directions'); console.assert(ok6,'move tables wired'); console.assert(ok7,'ROSTER combines CHARACTERS + custom');
   const el=document.createElement('div'); el.style.cssText='position:fixed;top:8px;left:8px;z-index:99;font:bold 16px monospace;padding:8px 12px;border-radius:6px;color:#000;background:'+(pass?'#3c3':'#f44');
   el.textContent='SELF-CHECK '+(pass?'PASS':'FAIL'); document.body.appendChild(el);
+  // async: verify the CharacterStore round-trips (save -> list -> remove), the actual persistence contract
+  const testId='selftest_'+Math.random().toString(36).slice(2);
+  CharacterStore.save({id:testId,name:'Test'}).then(()=>CharacterStore.list()).then(list=>{
+    const found=list.some(c=>c.id===testId);
+    return CharacterStore.remove(testId).then(()=>found);
+  }).then(storeOk=>{
+    const el2=document.createElement('div'); el2.style.cssText='position:fixed;top:40px;left:8px;z-index:99;font:bold 14px monospace;padding:6px 10px;border-radius:6px;color:#000;background:'+(storeOk?'#3c3':'#f44');
+    el2.textContent='STORE '+(storeOk?'OK':'FAIL'); document.body.appendChild(el2);
+  });
   return pass;
 }
 if(new URLSearchParams(location.search).get('test')==='1') runSelfCheck();

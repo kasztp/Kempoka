@@ -61,12 +61,34 @@ a black top**; **Blue Belt and above** (including all Dan grades) is **fully bla
 
 ## Adding a character
 
-Every fighter is one object in the `CHARACTERS` array near the top of `index.html`. Copy an
-existing entry, change the fields (name, `beltRank` — an id from the belt table above, or `null`
+Every built-in fighter is one object in the `CHARACTERS` array near the top of `index.html`. Copy
+an existing entry, change the fields (name, `beltRank` — an id from the belt table above, or `null`
 for no belt — outfit, build, hair/beard, stats, special), and it shows up in character select
 automatically, belt and gi colors included — the grid pages to fit any number. A brand-new kind of
 special needs a matching `case` in `doSpecial()`; reusing an existing special type needs no code
 changes.
+
+## Create Fighter (in-game)
+
+Main menu → **Create Fighter** lets a player build one without touching code: name, belt rank,
+gi/spandex + colors, hair/beard, build, stats, and a special move (picked from the same reusable
+special types above, with a custom name). **🎲 Randomize** fills the whole form for a quick
+generated fighter. Saved fighters appear in every fighter-select screen alongside the built-ins
+(with a small badge), and can be edited or deleted from the **Create Fighter** screen's "My
+Fighters" list.
+
+Custom fighters are saved via `CharacterStore` (`index.html`), currently backed by `localStorage` —
+**per-browser only, not shared between players.** The store's `list()/save()/remove()` all return
+Promises even though `localStorage` itself is synchronous, specifically so it can be swapped for a
+`fetch()`-based cloud API (a shared roster / leaderboard backend) later without touching any of the
+calling code — `enterCreate`, `saveDraft`, `deleteCustom`, etc. only ever await the interface, never
+`localStorage` directly.
+
+## CPU opponent (1-Player mode)
+
+1-Player now always shows a second **"Choose CPU Opponent"** select screen after you pick your own
+fighter — pick anyone in the roster (built-in or custom), or hit **🎲 Random CPU** for the old
+random-pick behavior.
 
 ## Credits
 
