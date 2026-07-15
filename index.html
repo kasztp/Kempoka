@@ -73,6 +73,19 @@
 const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
 const W = 960, H = 540, GROUND = 476, INK = '#1a1a1a';
 
+// `canvas{width:100%;height:100%;object-fit:contain}` means the element's box (from
+// getBoundingClientRect) is often bigger than the actual rendered 960x540 content whenever the
+// viewport/window isn't exactly 16:9 (any 16:10 laptop, most fullscreen monitors) — the difference
+// is letterbox bars. Pointer math must use the letterboxed content rect, not the raw element box,
+// or clicks land on the wrong logical coordinate (worst near edges, e.g. bottom-row menu buttons).
+function canvasContentRect(){
+  const r = cv.getBoundingClientRect(), boxAR = r.width/r.height, contentAR = W/H;
+  let cw, ch, cx, cy;
+  if(boxAR > contentAR){ ch=r.height; cw=ch*contentAR; cx=r.left+(r.width-cw)/2; cy=r.top; }
+  else { cw=r.width; ch=cw/contentAR; cx=r.left; cy=r.top+(r.height-ch)/2; }
+  return {left:cx, top:cy, width:cw, height:ch};
+}
+
 // ROSTER = built-ins + custom fighters; everything that lists/selects a fighter reads
 // this (not CHARACTERS directly), so a custom fighter shows up everywhere automatically.
 let customCharacters=[], ROSTER=CHARACTERS.slice();
@@ -162,7 +175,7 @@ function readInput(side){
 }
 // pointer clicks on canvas (menus)
 let clickPt=null;
-cv.addEventListener('pointerdown',e=>{ const r=cv.getBoundingClientRect(); clickPt={x:(e.clientX-r.left)/r.width*W, y:(e.clientY-r.top)/r.height*H}; Audio.ensure(); });
+cv.addEventListener('pointerdown',e=>{ const r=canvasContentRect(); clickPt={x:(e.clientX-r.left)/r.width*W, y:(e.clientY-r.top)/r.height*H}; Audio.ensure(); });
 
 // ---------- Fighter ----------------------------------------------------------
 // computeDamage/bodyRect/rectsOverlap/inClinchRange/fh/faceDir/moveDir now live in
@@ -816,7 +829,7 @@ function readUIIntoDraft(){
   draft.build.scale=parseFloat(createUI.scale.value); draft.build.girth=parseFloat(createUI.girth.value);
   draft.special.type=createUI.specialType.value;
 }
-function canvasScale(){ const r=cv.getBoundingClientRect(); return {r, sx:r.width/W, sy:r.height/H}; }
+function canvasScale(){ const r=canvasContentRect(); return {r, sx:r.width/W, sy:r.height/H}; }
 function placeEl(el,lx,ly,lw,lh){ const {r,sx,sy}=canvasScale();
   el.style.left=(r.left+lx*sx)+'px'; el.style.top=(r.top+ly*sy)+'px';
   el.style.width=(lw*sx)+'px'; el.style.height=(lh*sy)+'px'; }
@@ -968,22 +981,23 @@ function drawFight(){
     else if(f.grab){ ctx.fillStyle='#fff'; ctx.font='bold 14px "Trebuchet MS"'; ctx.textAlign='center'; ctx.fillText('COUNTER!',f.x,f.y-fh(f)-14); } });
 }
 const HUD_MARGIN=130;   // extra edge inset (vs. a plain 30) so the corner buttons never sit over the HP bar
+const BAR_W=280;        // narrower than the old 360 so both bars leave a clear gap for the timer in the middle
 function drawHUD(){
-  for(let i=0;i<2;i++){ const f=F[i], right=i===1, bx=right?W-HUD_MARGIN-360:HUD_MARGIN;
+  for(let i=0;i<2;i++){ const f=F[i], right=i===1, bx=right?W-HUD_MARGIN-BAR_W:HUD_MARGIN;
     // hp bar
-    ctx.fillStyle='#000'; ctx.fillRect(bx-2,16,364,26);
-    ctx.fillStyle='#5a1414'; ctx.fillRect(bx,18,360,22);
+    ctx.fillStyle='#000'; ctx.fillRect(bx-2,16,BAR_W+4,26);
+    ctx.fillStyle='#5a1414'; ctx.fillRect(bx,18,BAR_W,22);
     const frac=Math.max(0,f.hp/f.char.stats.maxHp), col = frac>0.3?'#e8b400':'#e04030';
-    ctx.fillStyle=col; const wd=360*frac; ctx.fillRect(right?bx+360-wd:bx,18,wd,22);
-    ctx.strokeStyle=GOLD; ctx.lineWidth=2; ctx.strokeRect(bx,18,360,22);
+    ctx.fillStyle=col; const wd=BAR_W*frac; ctx.fillRect(right?bx+BAR_W-wd:bx,18,wd,22);
+    ctx.strokeStyle=GOLD; ctx.lineWidth=2; ctx.strokeRect(bx,18,BAR_W,22);
     ctx.fillStyle=GOLD; ctx.font='bold 18px "Trebuchet MS"'; ctx.textAlign=right?'right':'left';
-    ctx.fillText(f.char.name.toUpperCase(),right?bx+360:bx,60);
+    ctx.fillText(f.char.name.toUpperCase(),right?bx+BAR_W:bx,60);
     // round pips
-    for(let w=0;w<WINS_NEEDED;w++){ const px=(right?bx+360-14:bx+8)+ (right?-1:1)*w*20; ctx.beginPath(); ctx.arc(px,78,6,0,7);
+    for(let w=0;w<WINS_NEEDED;w++){ const px=(right?bx+BAR_W-14:bx+8)+ (right?-1:1)*w*20; ctx.beginPath(); ctx.arc(px,78,6,0,7);
       ctx.fillStyle=w<f.wins?GOLD:'rgba(245,168,0,.25)'; ctx.fill(); }
     // special cd
     ctx.fillStyle='#d8c9a0'; ctx.font='12px "Trebuchet MS"'; ctx.textAlign=right?'right':'left';
-    ctx.fillText(f.cleaver>0?'★ CLEAVER': (f.cool.special>0?f.char.special.name+' '+f.cool.special.toFixed(1):f.char.special.name+' READY'), right?bx+360:bx, 96);
+    ctx.fillText(f.cleaver>0?'★ CLEAVER': (f.cool.special>0?f.char.special.name+' '+f.cool.special.toFixed(1):f.char.special.name+' READY'), right?bx+BAR_W:bx, 96);
   }
   ctx.fillStyle=GOLD; ctx.font='bold 30px "Trebuchet MS"'; ctx.textAlign='center'; ctx.fillText(Math.ceil(Math.max(0,roundTimer)),W/2,44);
 }
@@ -1022,7 +1036,7 @@ function loop(now){ DT=Math.min(0.05,(now-last)/1000); last=now;
   document.getElementById('exitBtn').classList.toggle('show', state==='fight');
   requestAnimationFrame(loop);
 }
-document.getElementById('exitBtn').addEventListener('click', ()=>{ state='menu'; });
+document.getElementById('exitBtn').addEventListener('pointerdown', e=>{ e.preventDefault(); state='menu'; });
 // ---------- Fullscreen toggle (persistent button, independent of game state) --
 // ponytail: element Fullscreen isn't supported on iPhone Safari (iPadOS/desktop/Android are fine)
 // — feature-detect and just hide the button there rather than show a control that silently no-ops.
@@ -1033,7 +1047,8 @@ document.getElementById('exitBtn').addEventListener('click', ()=>{ state='menu';
   btn.classList.add('show');
   function isFs(){ return !!(document.fullscreenElement || document.webkitFullscreenElement); }
   function updateIcon(){ btn.textContent = isFs() ? '⤫' : '⛶'; btn.title = isFs() ? 'Exit fullscreen' : 'Fullscreen'; }
-  btn.addEventListener('click', ()=>{
+  btn.addEventListener('pointerdown', e=>{
+    e.preventDefault();
     if(isFs()){ (document.exitFullscreen||document.webkitExitFullscreen).call(document); }
     else{ const el=document.documentElement; (el.requestFullscreen||el.webkitRequestFullscreen).call(el); }
   });
