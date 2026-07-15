@@ -125,6 +125,23 @@ get a parallel pixel-art treatment too (banded gradients instead of smooth ones,
 props), so the fighters and the world read as one consistent style. See `PIXEL_BUF_SCALE`/`PX` in
 `index.html` to tune chunkiness.
 
+## Language — EN / DE / ES / IT / FR / HU
+
+A flag button sits in the top-right of the main menu. Click it to expand a list of the other 5
+flags; picking one switches every UI string (menus, HUD, Controls, Create Fighter, etc.) and
+persists across reloads. The default is auto-detected from the browser's language
+(`navigator.languages`, matched against the 6 supported codes, falling back to English).
+Fighter names and special-move names are **not** translated — they're Japanese loanwords by
+design and stay as authored in `CHARACTERS` regardless of UI language.
+
+Translations live in `I18N` in `game-logic.js` (a key-major dictionary — one row per string, all
+6 languages inline — so a missing translation is easy to spot while editing a row) alongside the
+lookup function `t(lang, key)` and `detectDefaultLang(languages)`. A unit test asserts every key
+has a non-empty value for every supported language, so an incomplete row fails `npm test` rather
+than shipping silently. Button labels auto-shrink their font to fit (`drawBtn`), and longer fixed
+lines use the `fitText()` helper for the same reason — a translation can be much longer than its
+English source, and neither should ever overflow or collide with a neighboring label.
+
 ## CPU opponent (1-Player mode)
 
 1-Player now always shows a second **"Choose CPU Opponent"** select screen after you pick your own

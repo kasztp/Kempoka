@@ -150,6 +150,13 @@ let graphicsStyle = localStorage.kmp_graphics || 'classic';   // 'classic' | 'pi
 function applyGraphicsStyle(){ cv.style.imageRendering = graphicsStyle==='pixel' ? 'pixelated' : 'auto'; }
 function toggleGraphicsStyle(){ graphicsStyle = graphicsStyle==='pixel'?'classic':'pixel'; localStorage.kmp_graphics=graphicsStyle; applyGraphicsStyle(); }
 applyGraphicsStyle();
+
+// ---------- Language (menu-only setting, read live by every draw*() text call) --
+// Flags are Unicode emoji (no image assets) — GOLD for English is 🇬🇧 as a neutral choice.
+const FLAGS = { en:'🇬🇧', de:'🇩🇪', es:'🇪🇸', it:'🇮🇹', fr:'🇫🇷', hu:'🇭🇺' };
+let lang = localStorage.kmp_lang || detectDefaultLang(navigator.languages || [navigator.language]);
+let langPickerOpen = false;
+function setLang(l){ lang=l; localStorage.kmp_lang=l; langPickerOpen=false; if(typeof applyLangToDom==='function') applyLangToDom(); }
 function touchAuto(){ try{ return matchMedia('(pointer: coarse)').matches; }catch(e){ return ('ontouchstart' in window)||navigator.maxTouchPoints>0; } }
 function wantTouch(){ return touchMode==='on' || (touchMode==='auto' && touchAuto()); }
 function bindTouch(){
@@ -574,15 +581,24 @@ let buttons=[]; // clickable rects for current scene
 function btn(x,y,w,h,label,fn,active){ buttons.push({x,y,w,h,label,fn,active}); }
 function drawBtn(b){ ctx.save(); ctx.fillStyle=b.active?GOLD:'rgba(245,168,0,.12)'; ctx.strokeStyle=GOLD; ctx.lineWidth=2;
   roundRect(b.x,b.y,b.w,b.h,8); ctx.fill(); ctx.stroke();
-  const fs=Math.max(11,Math.min(22,Math.round(b.h*0.55)));
-  ctx.fillStyle=b.active?INK:GOLD; ctx.font='bold '+fs+'px "Trebuchet MS"'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  let fs=Math.max(11,Math.min(22,Math.round(b.h*0.55)));
+  ctx.fillStyle=b.active?INK:GOLD; ctx.textAlign='center'; ctx.textBaseline='middle';
+  const maxW=b.w-14;   // 7px breathing room each side so longer translations never touch the border
+  ctx.font='bold '+fs+'px "Trebuchet MS"';
+  while(fs>8 && ctx.measureText(b.label).width>maxW){ fs--; ctx.font='bold '+fs+'px "Trebuchet MS"'; }
   ctx.fillText(b.label,b.x+b.w/2,b.y+b.h/2); ctx.restore(); }
+function fitText(text,x,y,maxW,startPx,bold){   // shrinks font until text fits maxW — guards long translations on fixed-width lines
+  let fs=startPx;
+  ctx.font=(bold?'bold ':'')+fs+'px "Trebuchet MS"';
+  while(fs>9 && ctx.measureText(text).width>maxW){ fs--; ctx.font=(bold?'bold ':'')+fs+'px "Trebuchet MS"'; }
+  ctx.fillText(text,x,y);
+}
 function roundRect(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
 function hit(b,p){ return p.x>=b.x&&p.x<=b.x+b.w&&p.y>=b.y&&p.y<=b.y+b.h; }
 
 // ---------- Stages (cycle sequentially, one per fight) -----------------------
 let stageIndex=0, matchCount=0;
-const STAGE_NAMES=['Underground Dojo','Rooftop Cage','Bamboo Grove','World Combat Arena'];
+const STAGE_NAME_KEYS=['stageDojoName','stageRooftopName','stageBambooName','stageArenaName'];
 function rng(seed){ return ()=>{ seed=(seed*1103515245+12345)&0x7fffffff; return seed/0x7fffffff; }; }
 const DECOR=(()=>{                                        // precomputed so decor doesn't jitter each frame
   let r=rng(3); const buildings=[]; let x=-30; while(x<W+40){ const bw=46+r()*74, bh=110+r()*230; buildings.push({x,w:bw,top:GROUND-bh}); x+=bw+6+r()*22; }
@@ -699,6 +715,16 @@ function bg(){ ctx.fillStyle=INK; ctx.fillRect(0,0,W,H);
 }
 function drawWatermark(cx,cy,r,alpha){ if(!logoOk) return; ctx.save(); ctx.globalAlpha=alpha; ctx.beginPath(); ctx.arc(cx,cy,r,0,7); ctx.clip(); ctx.drawImage(logo,cx-r,cy-r,r*2,r*2); ctx.restore(); }
 
+// ---- language picker (menu-only: a flag button that expands into a flag list) ----
+function drawLangPicker(){
+  const bw=44, bh=34, x0=W-16-bw, y0=16;
+  buttons.push({x:x0,y:y0,w:bw,h:bh,label:FLAGS[lang],fn:()=>{langPickerOpen=!langPickerOpen;},active:langPickerOpen});
+  if(langPickerOpen){
+    SUPPORTED_LANGS.filter(l=>l!==lang).forEach((l,i)=>{
+      buttons.push({x:x0,y:y0+bh+6+i*(bh+4),w:bw,h:bh,label:FLAGS[l],fn:()=>setLang(l),active:false});
+    });
+  }
+}
 // ---- menu ----
 function drawMenu(){
   buttons=[]; bg2();
@@ -708,45 +734,45 @@ function drawMenu(){
   ctx.font='italic 15px "Trebuchet MS"'; ctx.fillStyle='#d8c9a0';
   ctx.fillText('The Chosen Ones · Zen Bu Kan Kempo',W/2,200);
   hairline(214);
-  btn(W/2-150,228,300,44,'1 PLAYER',()=>{mode='1p';gotoSelect();},false);
-  btn(W/2-150,278,300,44,'2 PLAYERS',()=>{mode='2p';gotoSelect();},false);
-  btn(W/2-150,328,300,40,'CREATE FIGHTER',()=>enterCreate(),false);
-  btn(W/2-150,374,300,38,'CONTROLS',()=>{state='controls';},false);
-  btn(W/2-195,422,110,38,'MUSIC: '+(Audio.musicOn?'ON':'OFF'),()=>Audio.toggleMusic(),Audio.musicOn);
-  btn(W/2-77,422,110,38,'SFX: '+(Audio.sfxOn?'ON':'OFF'),()=>Audio.toggleSfx(),Audio.sfxOn);
-  btn(W/2+41,422,154,38,'GFX: '+(graphicsStyle==='pixel'?'PIXEL':'CLASSIC'),toggleGraphicsStyle,graphicsStyle==='pixel');
+  btn(W/2-150,228,300,44,t(lang,'onePlayer'),()=>{mode='1p';gotoSelect();},false);
+  btn(W/2-150,278,300,44,t(lang,'twoPlayers'),()=>{mode='2p';gotoSelect();},false);
+  btn(W/2-150,328,300,40,t(lang,'createFighter'),()=>enterCreate(),false);
+  btn(W/2-150,374,300,38,t(lang,'controls'),()=>{state='controls';},false);
+  btn(W/2-195,422,110,38,t(lang,'music')+': '+(Audio.musicOn?t(lang,'on'):t(lang,'off')),()=>Audio.toggleMusic(),Audio.musicOn);
+  btn(W/2-77,422,110,38,t(lang,'sfx')+': '+(Audio.sfxOn?t(lang,'on'):t(lang,'off')),()=>Audio.toggleSfx(),Audio.sfxOn);
+  btn(W/2+41,422,154,38,t(lang,'gfx')+': '+(graphicsStyle==='pixel'?t(lang,'pixel'):t(lang,'classic')),toggleGraphicsStyle,graphicsStyle==='pixel');
+  drawLangPicker();
   buttons.forEach(drawBtn);
 }
 // ---- controls screen ----
 function drawControls(){
   buttons=[]; bg2();
-  ctx.fillStyle=GOLD; ctx.textAlign='center'; ctx.font='bold 32px "Trebuchet MS"'; ctx.fillText('CONTROLS',W/2,48); hairline(62);
+  ctx.fillStyle=GOLD; ctx.textAlign='center'; ctx.font='bold 32px "Trebuchet MS"'; ctx.fillText(t(lang,'controls'),W/2,48); hairline(62);
   ctx.textAlign='left';
-  const keys=(x,title,lines)=>{ ctx.fillStyle=GOLD; ctx.font='bold 17px "Trebuchet MS"'; ctx.fillText(title,x,92);
-    ctx.fillStyle='#e6dcc0'; ctx.font='14px "Trebuchet MS"'; lines.forEach((ln,i)=>ctx.fillText(ln,x,114+i*21)); };
-  keys(70,'PLAYER 1  (keyboard)',['A / D — move    W — jump    S — crouch','J — punch    K — kick    L — block','U — special    I — grab / counter']);
-  keys(520,'PLAYER 2  (2P keyboard)',['← / → — move    ↑ — jump    ↓ — crouch','Num 1 — punch   Num 2 — kick   Num 3 — block','Num 0 — special   Num 4 — grab / counter']);
+  const colW = 520-70-20;   // the two keyboard columns sit at x=70 and x=520, so this is the tighter column's budget
+  const keys=(x,title,lines)=>{ ctx.fillStyle=GOLD; fitText(title,x,92,colW,17,true);
+    ctx.fillStyle='#e6dcc0'; lines.forEach((ln,i)=>fitText(ln,x,114+i*21,colW,14,false)); };
+  keys(70,t(lang,'player1Keyboard'),[t(lang,'player1Line1'),t(lang,'player1Line2'),t(lang,'player1Line3')]);
+  keys(520,t(lang,'player2Keyboard'),[t(lang,'player2Line1'),t(lang,'player2Line2'),t(lang,'player2Line3')]);
   // moves — direction + button
-  ctx.fillStyle=GOLD; ctx.font='bold 17px "Trebuchet MS"'; ctx.fillText('MOVES  ( hold a direction + attack button )',70,210);
-  ctx.fillStyle='#b9ac86'; ctx.font='13px "Trebuchet MS"'; ctx.fillText('→ = toward the opponent   ← = away   (you always auto-face the foe)',70,230);
-  const row=(y,head,rest)=>{ ctx.font='bold 16px "Trebuchet MS"'; ctx.fillStyle=GOLD; ctx.fillText(head,70,y);
-    ctx.font='15px "Trebuchet MS"'; ctx.fillStyle='#e6dcc0'; ctx.fillText(rest,168,y); };
-  row(258,'PUNCH', 'Jab   ·   → Cross   ·   ↑ Uppercut   ·   ↓ Body hook   ·   ← Head hook');
-  row(284,'KICK',  'Front / tepe   ·   ↓ Low kick   ·   → Roundhouse (ribs)   ·   ← Side kick   ·   ↑ Head kick');
-  row(310,'GRAB',  'Clinch   ·   ↓ Double-leg   ·   ← Single-leg   ·   ↑ Judo throw');
-  ctx.fillStyle='#b9ac86'; ctx.font='13px "Trebuchet MS"';
-  ctx.fillText('In a clinch: punch = throw · kick a stunned foe = choke · the grabbed fighter taps grab to escape/reverse.',70,334);
-  ctx.fillStyle='#e6dcc0'; ctx.font='14px "Trebuchet MS"';
-  ['• Uppercut & head kick beat jump-ins; low kick & body hook stay under high strikes.',
-   '• Punches & kicks work in mid-air. Blocks, grabs, throws & chokes are ground-only.',
-   '• Takedowns whiff (and can be punished) if you shoot out of range or into a block.'].forEach((ln,i)=>ctx.fillText(ln,70,364+i*22));
-  const tl = touchMode==='auto'?'AUTO':(touchMode==='on'?'ON':'OFF');
-  ctx.fillStyle='#b9ac86'; ctx.font='13px "Trebuchet MS"'; ctx.textAlign='center';
-  ctx.fillText('AUTO shows the on-screen pad on touchscreens only; ON forces it (preview on desktop).',W/2,452);
-  btn(W/2-130,464,260,36,'TOUCH BUTTONS: '+tl,()=>{ touchMode = touchMode==='auto'?'on':(touchMode==='on'?'off':'auto'); localStorage.kmp_touch=touchMode; },touchMode!=='off');
-  ctx.textAlign='center'; ctx.fillStyle='#b9ac86'; ctx.font='12px "Trebuchet MS"';
-  ctx.fillText('On the touch pad, hold a D-pad direction together with an attack button for the variants.',W/2,516);
-  btn(20,H-46,104,34,'‹ BACK',()=>{state='menu';},false);
+  ctx.fillStyle=GOLD; ctx.font='bold 17px "Trebuchet MS"'; ctx.fillText(t(lang,'movesHeader'),70,210);
+  ctx.fillStyle='#b9ac86'; fitText(t(lang,'movesSub'),70,230,W-70-70,13,false);
+  const row=(y,head,rest)=>{ ctx.fillStyle=GOLD; fitText(head,70,y,168-70-8,16,true);
+    ctx.fillStyle='#e6dcc0'; fitText(rest,168,y,W-70-168,15,false); };
+  row(258,t(lang,'punchLabel'), t(lang,'punchDesc'));
+  row(284,t(lang,'kickLabel'),  t(lang,'kickDesc'));
+  row(310,t(lang,'grabLabel'),  t(lang,'grabDesc'));
+  ctx.fillStyle='#b9ac86';
+  fitText(t(lang,'clinchNote'),70,334,W-70-70,13,false);
+  ctx.fillStyle='#e6dcc0';
+  [t(lang,'bullet1'), t(lang,'bullet2'), t(lang,'bullet3')].forEach((ln,i)=>fitText(ln,70,364+i*22,W-70-70,14,false));
+  const tl = touchMode==='auto'?t(lang,'auto'):(touchMode==='on'?t(lang,'on'):t(lang,'off'));
+  ctx.fillStyle='#b9ac86'; ctx.textAlign='center';
+  fitText(t(lang,'touchNote'),W/2,452,W-140,13,false);
+  btn(W/2-130,464,260,36,t(lang,'touchButtons')+': '+tl,()=>{ touchMode = touchMode==='auto'?'on':(touchMode==='on'?'off':'auto'); localStorage.kmp_touch=touchMode; },touchMode!=='off');
+  ctx.textAlign='center'; ctx.fillStyle='#b9ac86';
+  fitText(t(lang,'touchHint'),W/2,516,W-140,12,false);
+  btn(20,H-46,104,34,'‹ '+t(lang,'back'),()=>{state='menu';},false);
   buttons.forEach(drawBtn);
 }
 function bg2(){ const grd=ctx.createRadialGradient(W/2,240,60,W/2,240,600); grd.addColorStop(0,'#242015'); grd.addColorStop(1,INK); ctx.fillStyle=grd; ctx.fillRect(0,0,W,H); }
@@ -754,16 +780,27 @@ function hairline(y){ ctx.strokeStyle='rgba(245,168,0,.5)'; ctx.lineWidth=1; ctx
 
 // ---- create fighter ----
 const SPECIAL_TYPES=[   // reuses existing engine mechanics — a custom fighter needs no new code, just a type pick
-  {type:'combo',   label:'Combo Strike — jab, cross, roundhouse chain'},
-  {type:'throw',   label:'Judo Throw — lunge into a clinch throw'},
-  {type:'lunge',   label:'Lunging Strike — dashing heavy hit'},
-  {type:'spin',    label:'Spinning Kick — advancing roundhouse'},
-  {type:'cleaver', label:'Comeback Weapon — bonus reach/damage under 30% HP'},
+  {type:'combo',   key:'specialCombo'},
+  {type:'throw',   key:'specialThrow'},
+  {type:'lunge',   key:'specialLunge'},
+  {type:'spin',    key:'specialSpin'},
+  {type:'cleaver', key:'specialCleaver'},
 ];
-SPECIAL_TYPES.forEach(s=>{ const o=document.createElement('option'); o.value=s.type; o.textContent=s.label; document.getElementById('cfSpecialType').appendChild(o); });
+function populateSpecialTypeOptions(){
+  const sel=document.getElementById('cfSpecialType'), prev=sel.value;
+  sel.innerHTML='';
+  SPECIAL_TYPES.forEach(s=>{ const o=document.createElement('option'); o.value=s.type; o.textContent=t(lang,s.key); sel.appendChild(o); });
+  if(prev) sel.value=prev;
+}
+function applyLangToDom(){   // native inputs' placeholders aren't canvas-drawn, so re-set them on language change
+  createUI.name.placeholder=t(lang,'fighterNamePlaceholder');
+  createUI.specialName.placeholder=t(lang,'specialNamePlaceholder');
+  populateSpecialTypeOptions();
+}
 const $=id=>document.getElementById(id);
 const createUI={ name:$('cfName'), specialName:$('cfSpecialName'), skin:$('cfSkin'), hairColor:$('cfHairColor'), outfitColor:$('cfOutfitColor'),
   hp:$('cfHp'), speed:$('cfSpeed'), power:$('cfPower'), defense:$('cfDefense'), scale:$('cfScale'), girth:$('cfGirth'), specialType:$('cfSpecialType') };
+applyLangToDom();
 const SKIN_TONES=['#e8b98f','#e5b083','#e3ab7d','#f0c39c','#c98a5e','#a56b3f','#7a4a2b'];
 const HAIR_COLORS=['#2a2a2a','#3a2a1a','#4a3320','#b3401a','#5c4033','#1a1a1a','#8a6d3b'];
 const SPANDEX_COLORS=['#16bcbc','#c0392b','#8e44ad','#2980b9','#27ae60','#e67e22','#2c3e50'];
@@ -836,65 +873,66 @@ function placeEl(el,lx,ly,lw,lh){ const {r,sx,sy}=canvasScale();
 
 function drawCreate(){
   buttons=[]; bg2(); readUIIntoDraft();
-  ctx.fillStyle=GOLD; ctx.textAlign='center'; ctx.font='bold 28px "Trebuchet MS"'; ctx.fillText('CREATE FIGHTER',W/2,38); hairline(52);
+  ctx.fillStyle=GOLD; ctx.textAlign='center'; ctx.font='bold 28px "Trebuchet MS"'; ctx.fillText(t(lang,'createFighter'),W/2,38); hairline(52);
   ctx.textAlign='left';
 
   // left column: identity
-  ctx.fillStyle=GOLD; ctx.font='bold 13px "Trebuchet MS"'; ctx.fillText('NAME',60,74); placeEl(createUI.name,60,80,230,28);
-  ctx.fillText('BELT RANK',60,126);
+  ctx.fillStyle=GOLD; ctx.font='bold 13px "Trebuchet MS"'; ctx.fillText(t(lang,'name'),60,74); placeEl(createUI.name,60,80,230,28);
+  ctx.fillText(t(lang,'beltRank'),60,126);
   btn(60,132,26,26,'◀',()=>{ const i=BELT_CHOICES.indexOf(draft.beltRank); draft.beltRank=BELT_CHOICES[(i-1+BELT_CHOICES.length)%BELT_CHOICES.length]; },false);
   btn(316,132,26,26,'▶',()=>{ const i=BELT_CHOICES.indexOf(draft.beltRank); draft.beltRank=BELT_CHOICES[(i+1)%BELT_CHOICES.length]; },false);
-  ctx.fillStyle='#e6dcc0'; ctx.font='13px "Trebuchet MS"'; ctx.textAlign='center'; ctx.fillText(beltLabel(draft.beltRank),188,150); ctx.textAlign='left';
+  ctx.fillStyle='#e6dcc0'; ctx.textAlign='center'; fitText(t(lang,'belt_'+(draft.beltRank||'none')),188,150,316-86-16,13,false); ctx.textAlign='left';
   const pvBelt=getBelt(draft.beltRank);
   ctx.fillStyle=pvBelt?pvBelt.color:'#3a3a3a'; ctx.fillRect(60,166,120,9);
   if(pvBelt&&pvBelt.stripe){ ctx.fillStyle=pvBelt.stripe; ctx.fillRect(60,164,120,2.5); }
   if(pvBelt&&pvBelt.tip){ ctx.fillStyle=pvBelt.tip; ctx.fillRect(160,166,20,9); }
-  btn(60,188,110,30,draft.outfit==='gi'?'GI':'SPANDEX',()=>{ draft.outfit=draft.outfit==='gi'?'spandex':'gi'; },false);
-  btn(180,188,86,30,draft.hair.style.toUpperCase(),()=>{ const order=['short','braid','bald']; draft.hair.style=order[(order.indexOf(draft.hair.style)+1)%order.length]; },false);
-  btn(276,188,84,30,'BEARD '+(draft.beard?'ON':'OFF'),()=>{ draft.beard=!draft.beard; },draft.beard);
+  const HAIR_LABELS={short:'hairShort',braid:'hairBraid',bald:'hairBald'};
+  btn(60,188,110,30,draft.outfit==='gi'?t(lang,'gi'):t(lang,'spandex'),()=>{ draft.outfit=draft.outfit==='gi'?'spandex':'gi'; },false);
+  btn(180,188,86,30,t(lang,HAIR_LABELS[draft.hair.style]),()=>{ const order=['short','braid','bald']; draft.hair.style=order[(order.indexOf(draft.hair.style)+1)%order.length]; },false);
+  btn(276,188,84,30,t(lang,'beard')+' '+(draft.beard?t(lang,'on'):t(lang,'off')),()=>{ draft.beard=!draft.beard; },draft.beard);
   ctx.fillStyle=GOLD; ctx.font='bold 12px "Trebuchet MS"';
-  ctx.fillText('SKIN',60,228); placeEl(createUI.skin,60,232,50,30);
-  ctx.fillText('HAIR',124,228); placeEl(createUI.hairColor,124,232,50,30);
-  if(draft.outfit==='spandex'){ ctx.fillText('OUTFIT COLOR',188,228); placeEl(createUI.outfitColor,188,232,60,30); createUI.outfitColor.style.display='block'; }
+  ctx.fillText(t(lang,'skin'),60,228); placeEl(createUI.skin,60,232,50,30);
+  ctx.fillText(t(lang,'hair'),124,228); placeEl(createUI.hairColor,124,232,50,30);
+  if(draft.outfit==='spandex'){ ctx.fillText(t(lang,'outfitColor'),188,228); placeEl(createUI.outfitColor,188,232,60,30); createUI.outfitColor.style.display='block'; }
   else createUI.outfitColor.style.display='none';
 
   // right column: stats / build / special
   const RX=470;
   const statRow=(y,label,val,el)=>{ ctx.fillStyle='#e6dcc0'; ctx.font='12px "Trebuchet MS"'; ctx.fillText(label+': '+val,RX,y-6); placeEl(el,RX,y,300,18); };
-  ctx.fillStyle=GOLD; ctx.font='bold 15px "Trebuchet MS"'; ctx.fillText('STATS',RX,74);
-  statRow(104,'HP',      draft.stats.maxHp,              createUI.hp);
-  statRow(138,'Speed',   draft.stats.speed.toFixed(2),   createUI.speed);
-  statRow(172,'Power',   draft.stats.power.toFixed(2),   createUI.power);
-  statRow(206,'Defense', draft.stats.defense.toFixed(2), createUI.defense);
-  ctx.fillStyle=GOLD; ctx.font='bold 15px "Trebuchet MS"'; ctx.fillText('BUILD',RX,240);
-  statRow(264,'Height',  draft.build.scale.toFixed(2),   createUI.scale);
-  statRow(298,'Girth',   draft.build.girth.toFixed(2),   createUI.girth);
-  ctx.fillStyle=GOLD; ctx.font='bold 15px "Trebuchet MS"'; ctx.fillText('SPECIAL MOVE',RX,332);
-  ctx.fillStyle='#e6dcc0'; ctx.font='12px "Trebuchet MS"'; ctx.fillText('Type',RX,350); placeEl(createUI.specialType,RX,354,300,28);
-  ctx.fillText('Name',RX,396); placeEl(createUI.specialName,RX,400,300,26);
+  ctx.fillStyle=GOLD; ctx.font='bold 15px "Trebuchet MS"'; ctx.fillText(t(lang,'stats'),RX,74);
+  statRow(104,t(lang,'hp'),         draft.stats.maxHp,              createUI.hp);
+  statRow(138,t(lang,'speedStat'),  draft.stats.speed.toFixed(2),   createUI.speed);
+  statRow(172,t(lang,'powerStat'),  draft.stats.power.toFixed(2),   createUI.power);
+  statRow(206,t(lang,'defenseStat'),draft.stats.defense.toFixed(2), createUI.defense);
+  ctx.fillStyle=GOLD; ctx.font='bold 15px "Trebuchet MS"'; ctx.fillText(t(lang,'build'),RX,240);
+  statRow(264,t(lang,'heightStat'), draft.build.scale.toFixed(2),   createUI.scale);
+  statRow(298,t(lang,'girthStat'),  draft.build.girth.toFixed(2),   createUI.girth);
+  ctx.fillStyle=GOLD; ctx.font='bold 15px "Trebuchet MS"'; ctx.fillText(t(lang,'specialMove'),RX,332);
+  ctx.fillStyle='#e6dcc0'; ctx.font='12px "Trebuchet MS"'; ctx.fillText(t(lang,'typeLabel'),RX,350); placeEl(createUI.specialType,RX,354,300,28);
+  ctx.fillText(t(lang,'nameFieldLabel'),RX,396); placeEl(createUI.specialName,RX,400,300,26);
 
   // live preview
-  ctx.fillStyle=GOLD; ctx.textAlign='center'; ctx.font='bold 13px "Trebuchet MS"'; ctx.fillText('PREVIEW',885,64);
+  ctx.fillStyle=GOLD; ctx.textAlign='center'; ctx.font='bold 13px "Trebuchet MS"'; ctx.fillText(t(lang,'preview'),885,64);
   drawPortrait(draft,885,235,1.0);
-  ctx.fillStyle='#e8c33a'; ctx.font='bold 12px "Trebuchet MS"'; ctx.fillText('★ '+(draft.special.name||'Special'),885,258);
+  ctx.fillStyle='#e8c33a'; ctx.font='bold 12px "Trebuchet MS"'; ctx.fillText('★ '+(draft.special.name||t(lang,'specialFallback')),885,258);
   ctx.textAlign='left';
 
   // my fighters — manage saved custom fighters (edit / delete); they also show up in fighter select
-  ctx.fillStyle=GOLD; ctx.font='bold 14px "Trebuchet MS"'; ctx.fillText('MY FIGHTERS',60,436);
+  ctx.fillStyle=GOLD; ctx.font='bold 14px "Trebuchet MS"'; ctx.fillText(t(lang,'myFighters'),60,436);
   const shown=customCharacters.slice(-2).reverse();
-  if(!shown.length){ ctx.fillStyle='#8a7d5c'; ctx.font='12px "Trebuchet MS"'; ctx.fillText('None yet — create your first fighter above.',60,456); }
+  if(!shown.length){ ctx.fillStyle='#8a7d5c'; ctx.font='12px "Trebuchet MS"'; ctx.fillText(t(lang,'noFightersYet'),60,456); }
   shown.forEach((c,i)=>{ const y=452+i*20;
     ctx.fillStyle=editingId===c.id?'#fff':'#e6dcc0'; ctx.font='13px "Trebuchet MS"'; ctx.fillText(c.name,60,y+13);
     const b=getBelt(c.beltRank); ctx.fillStyle=b?b.color:'#3a3a3a'; ctx.fillRect(220,y+3,30,10);
-    btn(760,y-1,60,18,'EDIT',()=>editCustom(c),false);
+    btn(760,y-1,60,18,t(lang,'edit'),()=>editCustom(c),false);
     btn(826,y-1,30,18,'×',()=>deleteCustom(c.id),false);
   });
   if(customCharacters.length>shown.length){ ctx.fillStyle='#8a7d5c'; ctx.font='11px "Trebuchet MS"';
-    ctx.fillText('+'+(customCharacters.length-shown.length)+' more (also visible in fighter select)',60,492); }
+    ctx.fillText(t(lang,'moreFighters').replace('{n}',customCharacters.length-shown.length),60,492); }
 
-  btn(60,500,170,34,'🎲 RANDOMIZE',randomizeDraft,false);
-  btn(395,500,190,34,'SAVE FIGHTER',saveDraft,true);
-  btn(760,500,140,34,'‹ BACK',()=>{ state='menu'; },false);
+  btn(60,500,170,34,'🎲 '+t(lang,'randomize'),randomizeDraft,false);
+  btn(395,500,190,34,t(lang,'saveFighter'),saveDraft,true);
+  btn(760,500,140,34,'‹ '+t(lang,'back'),()=>{ state='menu'; },false);
   buttons.forEach(drawBtn);
 }
 
@@ -903,7 +941,7 @@ function gotoSelect(){ state='select'; selPhase=0; sel=[0,0]; page=0; Audio.star
 const PER_PAGE=8, COLS=4;
 function drawSelect(){
   buttons=[]; bg2();
-  const title = selPhase===0 ? 'CHOOSE YOUR FIGHTER' : (mode==='1p' ? 'CHOOSE CPU OPPONENT' : 'PLAYER 2 — CHOOSE');
+  const title = selPhase===0 ? t(lang,'chooseYourFighter') : (mode==='1p' ? t(lang,'chooseCpuOpponent') : t(lang,'player2Choose'));
   ctx.fillStyle=GOLD; ctx.textAlign='center'; ctx.font='bold 30px "Trebuchet MS"'; ctx.fillText(title,W/2,58);
   hairline(74);
   const pages=Math.ceil(ROSTER.length/PER_PAGE);
@@ -927,12 +965,12 @@ function drawSelect(){
     ctx.fillStyle='#e8c33a'; ctx.font='bold 12px "Trebuchet MS"'; ctx.fillText('★ '+c.special.name, x+cw/2, y+chh-8);
     buttons.push({x,y,w:cw,h:chh,fn:()=>chooseFighter(idx),label:'',active:false});
   }
-  if(pages>1){ btn(x0,y0+rows*(chh+gap)+6,120,40,'◀ PREV',()=>{page=(page-1+pages)%pages;},false);
-    btn(x0+gridW-120,y0+rows*(chh+gap)+6,120,40,'NEXT ▶',()=>{page=(page+1)%pages;},false);
-    ctx.fillStyle='#d8c9a0'; ctx.font='16px "Trebuchet MS"'; ctx.fillText('page '+(page+1)+'/'+pages,W/2,y0+rows*(chh+gap)+30); }
-  if(mode==='1p' && selPhase===1) btn(W/2-100,H-52,200,38,'🎲 RANDOM CPU',pickRandomCpu,false);
-  btn(20,H-52,110,38,'‹ BACK',()=>{ if(selPhase===1){selPhase=0;} else {state='menu';} },false);
-  btn(W-150,H-52,130,38,'+ CREATE',()=>enterCreate(),false);
+  if(pages>1){ btn(x0,y0+rows*(chh+gap)+6,120,40,'◀ '+t(lang,'prev'),()=>{page=(page-1+pages)%pages;},false);
+    btn(x0+gridW-120,y0+rows*(chh+gap)+6,120,40,t(lang,'next')+' ▶',()=>{page=(page+1)%pages;},false);
+    ctx.fillStyle='#d8c9a0'; ctx.font='16px "Trebuchet MS"'; ctx.fillText(t(lang,'pageIndicator').replace('{a}',page+1).replace('{b}',pages),W/2,y0+rows*(chh+gap)+30); }
+  if(mode==='1p' && selPhase===1) btn(W/2-100,H-52,200,38,'🎲 '+t(lang,'randomCpu'),pickRandomCpu,false);
+  btn(20,H-52,110,38,'‹ '+t(lang,'back'),()=>{ if(selPhase===1){selPhase=0;} else {state='menu';} },false);
+  btn(W-150,H-52,130,38,'+ '+t(lang,'create'),()=>enterCreate(),false);
   buttons.filter(b=>b.label).forEach(drawBtn);
 }
 function drawPortrait(c,cx,cy,scale){ const f={char:c,x:cx,y:cy,facing:1,vx:0,anim:0,cleaver:0,action:null,grab:null,down:0,stun:0,blocking:false,crouching:false,onGround:true};
@@ -972,13 +1010,13 @@ function drawFight(){
   [F[0],F[1]].forEach(drawFighter);
   drawHUD();
   if(introTimer>0){ ctx.globalAlpha=Math.min(1,introTimer); ctx.fillStyle=GOLD; ctx.font='italic bold 30px "Trebuchet MS"'; ctx.textAlign='center';
-    ctx.fillText(STAGE_NAMES[stageIndex],W/2,150); ctx.globalAlpha=1; }
+    ctx.fillText(t(lang,STAGE_NAME_KEYS[stageIndex]),W/2,150); ctx.globalAlpha=1; }
   if(koFreeze>0){ ctx.fillStyle=GOLD; ctx.font='bold 60px "Trebuchet MS"'; ctx.textAlign='center';
-    ctx.fillText(roundTimer<=0&&!(F[0].hp<=0||F[1].hp<=0)?'TIME':'K.O.',W/2,H/2); }
+    ctx.fillText(roundTimer<=0&&!(F[0].hp<=0||F[1].hp<=0)?t(lang,'time'):t(lang,'ko'),W/2,H/2); }
   // clinch prompt
   F.forEach((f,i)=>{ if(f.grab&&f.grab.role==='grabber'){ ctx.fillStyle=GOLD; ctx.font='bold 15px "Trebuchet MS"'; ctx.textAlign='center';
-    ctx.fillText(f.grab.behind?'THROW / CHOKE!':'THROW!',f.x,f.y-fh(f)-14); }
-    else if(f.grab){ ctx.fillStyle='#fff'; ctx.font='bold 14px "Trebuchet MS"'; ctx.textAlign='center'; ctx.fillText('COUNTER!',f.x,f.y-fh(f)-14); } });
+    ctx.fillText(f.grab.behind?t(lang,'throwChoke'):t(lang,'throwPrompt'),f.x,f.y-fh(f)-14); }
+    else if(f.grab){ ctx.fillStyle='#fff'; ctx.font='bold 14px "Trebuchet MS"'; ctx.textAlign='center'; ctx.fillText(t(lang,'counter'),f.x,f.y-fh(f)-14); } });
 }
 const HUD_MARGIN=130;   // extra edge inset (vs. a plain 30) so the corner buttons never sit over the HP bar
 const BAR_W=280;        // narrower than the old 360 so both bars leave a clear gap for the timer in the middle
@@ -997,7 +1035,7 @@ function drawHUD(){
       ctx.fillStyle=w<f.wins?GOLD:'rgba(245,168,0,.25)'; ctx.fill(); }
     // special cd
     ctx.fillStyle='#d8c9a0'; ctx.font='12px "Trebuchet MS"'; ctx.textAlign=right?'right':'left';
-    ctx.fillText(f.cleaver>0?'★ CLEAVER': (f.cool.special>0?f.char.special.name+' '+f.cool.special.toFixed(1):f.char.special.name+' READY'), right?bx+BAR_W:bx, 96);
+    ctx.fillText(f.cleaver>0?'★ '+t(lang,'cleaverActive'): (f.cool.special>0?f.char.special.name+' '+f.cool.special.toFixed(1):f.char.special.name+' '+t(lang,'readyLabel')), right?bx+BAR_W:bx, 96);
   }
   ctx.fillStyle=GOLD; ctx.font='bold 30px "Trebuchet MS"'; ctx.textAlign='center'; ctx.fillText(Math.ceil(Math.max(0,roundTimer)),W/2,44);
 }
@@ -1008,11 +1046,11 @@ function drawResult(){
   const wf=F[winner];
   if(stageIndex===3){ ctx.fillStyle='rgba(245,168,0,.9)'; ctx.textAlign='center'; ctx.font='bold 56px serif'; ctx.fillText('優勝',W/2,72); } // Arena grand-stage flourish
   ctx.fillStyle=GOLD; ctx.textAlign='center'; ctx.font='bold 44px "Trebuchet MS"';
-  ctx.fillText((mode==='2p'?('PLAYER '+(winner+1)):(winner===0?'YOU WIN':'YOU LOSE')),W/2,120);
+  ctx.fillText((mode==='2p'?(t(lang,'playerLabel')+' '+(winner+1)):(winner===0?t(lang,'youWin'):t(lang,'youLose'))),W/2,120);
   ctx.font='bold 28px "Trebuchet MS"'; ctx.fillStyle='#d8c9a0'; ctx.fillText(wf.char.name+' — '+wf.char.special.name,W/2,160);
   drawPortrait(wf.char,W/2,410,1.4);
-  btn(W/2-230,470,220,50,'REMATCH',()=>startFight(),false);
-  btn(W/2+10,470,220,50,'MAIN MENU',()=>{state='menu';},false);
+  btn(W/2-230,470,220,50,t(lang,'rematch'),()=>startFight(),false);
+  btn(W/2+10,470,220,50,t(lang,'mainMenu'),()=>{state='menu';},false);
   buttons.forEach(drawBtn);
   hairline(140);
 }

@@ -8,6 +8,7 @@ const {
   CHARACTERS, CharacterStore,
   MOVES, PUNCHES, KICKS, CLINCH_RANGE,
   computeDamage, fh, bodyRect, rectsOverlap, inClinchRange, faceDir, moveDir,
+  SUPPORTED_LANGS, I18N, t, detectDefaultLang,
 } = require('./game-logic.js');
 
 function makeStub(overrides){
@@ -161,4 +162,40 @@ test('CharacterStore: saving the same id twice updates rather than duplicates', 
   assert.equal(matches.length, 1, 'should not duplicate on re-save');
   assert.equal(matches[0].name, 'Second');
   await CharacterStore.remove(id);
+});
+
+// ---------- i18n ---------------------------------------------------------------
+test('t: returns the requested language', () => {
+  assert.equal(t('de', 'controls'), 'STEUERUNG');
+  assert.equal(t('hu', 'mainMenu'), 'FŐMENÜ');
+});
+test('t: falls back to English for an unsupported language or missing key', () => {
+  assert.equal(t('ja', 'controls'), I18N.controls.en);
+  assert.equal(t('en', 'thisKeyDoesNotExist'), 'thisKeyDoesNotExist');
+});
+test('t: every key has a non-empty string for every supported language', () => {
+  for(const [key, row] of Object.entries(I18N)){
+    for(const lang of SUPPORTED_LANGS){
+      assert.equal(typeof row[lang], 'string', `${key}.${lang} should be a string`);
+      assert.ok(row[lang].length > 0, `${key}.${lang} should not be empty`);
+    }
+  }
+});
+test('detectDefaultLang: matches the first supported 2-letter prefix', () => {
+  assert.equal(detectDefaultLang(['de-DE', 'en-US']), 'de');
+  assert.equal(detectDefaultLang(['fr']), 'fr');
+});
+test('detectDefaultLang: falls back to en for unsupported languages or no input', () => {
+  assert.equal(detectDefaultLang(['ja-JP', 'ko-KR']), 'en');
+  assert.equal(detectDefaultLang([]), 'en');
+  assert.equal(detectDefaultLang(undefined), 'en');
+});
+
+test('I18N: every belt in BELT_TABLE (plus "no belt") has a translated label', () => {
+  const ids = ['none', ...Object.keys(BELT_TABLE)];
+  for (const id of ids) {
+    const key = 'belt_' + id;
+    assert.ok(I18N[key], `missing I18N key ${key}`);
+    for (const l of SUPPORTED_LANGS) assert.ok(I18N[key][l], `${key}.${l} missing`);
+  }
 });
