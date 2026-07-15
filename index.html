@@ -667,7 +667,8 @@ function stageDojo(){ const t=now();                      // 1) Underground Dojo
   ctx.strokeStyle='rgba(120,90,70,.12)'; ctx.lineWidth=1;
   for(let y=40;y<GROUND;y+=26){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
     const off=((y/26)|0)%2?26:0; for(let x=off;x<W;x+=52){ ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x,y+26); ctx.stroke(); } }
-  [180,740].forEach(sx=>{ ctx.fillStyle='#d9cdb0'; ctx.fillRect(sx,50,46,150); ctx.fillStyle='#9c4227'; ctx.fillRect(sx-3,44,52,8); ctx.fillRect(sx-3,196,52,8);
+  // scrolls sit just outside the round-timer gap, clear of the HP-bar/name/special text columns on either side
+  [415,499].forEach(sx=>{ ctx.fillStyle='#d9cdb0'; ctx.fillRect(sx,50,46,150); ctx.fillStyle='#9c4227'; ctx.fillRect(sx-3,44,52,8); ctx.fillRect(sx-3,196,52,8);
     ctx.fillStyle='#2a2018'; ctx.font='bold 30px serif'; ctx.textAlign='center'; ctx.fillText('拳',sx+23,102); ctx.fillText('法',sx+23,148); });
   [360,600].forEach((bx,k)=>{ const sw=Math.sin(t*1.1+k*2)*0.12; ctx.save(); ctx.translate(bx,140); ctx.rotate(sw);
     ctx.strokeStyle='#3a2f24'; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(0,-46); ctx.lineTo(0,0); ctx.stroke();
@@ -716,7 +717,7 @@ function stageDojoPixel(){ const t=now();
   ctx.strokeStyle='rgba(120,90,70,.12)'; ctx.lineWidth=PX;
   for(let y=40;y<GROUND;y+=26){ ctx.beginPath(); ctx.moveTo(0,snap(y)); ctx.lineTo(W,snap(y)); ctx.stroke();
     const off=((y/26)|0)%2?26:0; for(let x=off;x<W;x+=52){ ctx.beginPath(); ctx.moveTo(snap(x),snap(y)); ctx.lineTo(snap(x),snap(y+26)); ctx.stroke(); } }
-  [180,740].forEach(sx=>{ drawBlockyRect(sx,50,46,150,'#d9cdb0'); drawBlockyRect(sx-3,44,52,8,'#9c4227'); drawBlockyRect(sx-3,196,52,8,'#9c4227');
+  [415,499].forEach(sx=>{ drawBlockyRect(sx,50,46,150,'#d9cdb0'); drawBlockyRect(sx-3,44,52,8,'#9c4227'); drawBlockyRect(sx-3,196,52,8,'#9c4227');
     ctx.fillStyle='#2a2018'; ctx.font='bold 30px serif'; ctx.textAlign='center'; ctx.fillText('拳',sx+23,102); ctx.fillText('法',sx+23,148); });
   [360,600].forEach((bx,k)=>{ const sw=Math.sin(t*1.1+k*2)*0.12; ctx.save(); ctx.translate(bx,140); ctx.rotate(sw);
     drawBlockyLimb([0,-46],[0,0],4,'#3a2f24'); drawBlockyRect(-16,0,32,120,'#4a3423'); ctx.restore(); });
