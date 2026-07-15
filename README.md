@@ -72,7 +72,8 @@ Belts are a shared rank table (`KYU_RANKS`/`DAN_RANKS` in `game-logic.js`), not 
 12th Kyu (White) up through 1st Kyu (Brown, black stripe), then Dan grades (Black). Some kyu grades
 carry a stripe or tip accent (e.g. 6th Kyu = Purple with a brown tip). A gi-wearing fighter's uniform
 follows rank automatically: **below Blue Belt** (White/Yellow/Orange/Green) wears **white pants with
-a black top**; **Blue Belt and above** (including all Dan grades) is **fully black**.
+a black top**; **Blue Belt and above** (including all Dan grades) is **fully black**. Any Dan-ranked
+fighter (gi or spandex/rashguard) also wears a thin gold necklace with a small round pendant.
 
 ## Adding a character
 
@@ -86,11 +87,12 @@ changes.
 ## Create Fighter (in-game)
 
 Main menu → **Create Fighter** lets a player build one without touching code: name, belt rank,
-gi/spandex + colors, hair/beard, build, stats, and a special move (picked from the same reusable
-special types above, with a custom name). **🎲 Randomize** fills the whole form for a quick
-generated fighter. Saved fighters appear in every fighter-select screen alongside the built-ins
-(with a small badge), and can be edited or deleted from the **Create Fighter** screen's "My
-Fighters" list.
+gi/rashguard + colors, hairstyle, beard, build, stats, and a special move (picked from the same
+reusable special types above, with a custom name). Hairstyles: short, braid, bald, punk, buns
+("Leia"), or a padded headguard. Beard styles: none, full, moustache, goatee, or a long grey "old
+master" look. **🎲 Randomize** fills the whole form for a quick generated fighter. Saved fighters
+appear in every fighter-select screen alongside the built-ins (with a small badge), and can be
+edited or deleted from the **Create Fighter** screen's "My Fighters" list.
 
 Custom fighters are saved via `CharacterStore` (`game-logic.js`), currently backed by `localStorage` —
 **per-browser only, not shared between players.** The store's `list()/save()/remove()` all return
@@ -128,9 +130,9 @@ props), so the fighters and the world read as one consistent style. See `PIXEL_B
 ## Language — EN / DE / ES / IT / FR / HU
 
 A flag button sits in the top-right of the main menu. Click it to expand a list of the other 5
-flags; picking one switches every UI string (menus, HUD, Controls, Create Fighter, etc.) and
-persists across reloads. The default is auto-detected from the browser's language
-(`navigator.languages`, matched against the 6 supported codes, falling back to English).
+flags; picking one switches every UI string (menus, HUD, Controls, Create Fighter, the on-screen
+touch pad, etc.) and persists across reloads. The default is auto-detected from the browser's
+language (`navigator.languages`, matched against the 6 supported codes, falling back to English).
 Fighter names and special-move names are **not** translated — they're Japanese loanwords by
 design and stay as authored in `CHARACTERS` regardless of UI language.
 
