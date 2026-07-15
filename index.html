@@ -440,13 +440,14 @@ function drawFighterClassic(f,h,c,pose,g,hip,sh,head,headR,fFoot,bFoot,fHand,bHa
     if(belt.stripe){ ctx.strokeStyle=belt.stripe; ctx.lineWidth=2.5; ctx.beginPath(); ctx.moveTo(bx0,by-3.5); ctx.lineTo(bx1,by-3.5); ctx.stroke(); }
     if(belt.tip){ ctx.strokeStyle=belt.tip; ctx.lineWidth=8*g; ctx.beginPath(); ctx.moveTo(bx1-6*g,by); ctx.lineTo(bx1,by); ctx.stroke(); }
   }
-  // necklace (Dan ranks only — thin chain + small round pendant, sitting on the upper chest
-  // just below the shoulder/collar point so the head circle drawn later doesn't cover it)
-  if(belt&&belt.dan){ const nx=sh[0], ny=sh[1]+6*g;
-    ctx.strokeStyle=GOLD; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(nx-8*g,ny-3); ctx.quadraticCurveTo(nx,ny+4,nx+8*g,ny-3); ctx.stroke();
-    ctx.fillStyle=GOLD; ctx.beginPath(); ctx.arc(nx,ny+5,3,0,7); ctx.fill(); }
-  // front arm (drawn after the torso/necklace so it reads clearly in front)
+  // front arm (drawn before the necklace so the necklace isn't half-covered by it)
   line(sh,fHand,7*g,topColor);
+  // necklace (Dan ranks only — thin silver chain + small round pendant, sitting on the upper
+  // chest just below the shoulder/collar point so the head circle drawn later doesn't cover it;
+  // drawn after both arms so it reads clearly on top)
+  if(belt&&belt.dan){ const nx=sh[0], ny=sh[1]+6*g;
+    ctx.strokeStyle='#c9ccd4'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(nx-8*g,ny-3); ctx.quadraticCurveTo(nx,ny+4,nx+8*g,ny-3); ctx.stroke();
+    ctx.fillStyle='#c9ccd4'; ctx.beginPath(); ctx.arc(nx,ny+5,3,0,7); ctx.fill(); }
   // hands
   ctx.fillStyle=c.skin; [fHand,bHand].forEach(hd=>{ ctx.beginPath(); ctx.arc(hd[0],hd[1],4.5,0,7); ctx.fill(); });
   // cleaver (Imi active)
@@ -504,13 +505,13 @@ function drawFighterPixel(f,h,c,pose,g,hip,sh,head,headR,fFoot,bFoot,fHand,bHand
     if(belt.stripe){ bctx.strokeStyle=belt.stripe; bctx.lineWidth=2.5; bctx.lineCap='butt'; bctx.beginPath(); bctx.moveTo(snap(bx0),snap(by-3.5)); bctx.lineTo(snap(bx1),snap(by-3.5)); bctx.stroke(); }
     if(belt.tip){ bctx.fillStyle=belt.tip; bctx.fillRect(snap(bx1-6*g),snap(by-4*g/2),snap(6*g),snap(8)); }
   }
-  // necklace (Dan ranks only — see drawFighterClassic for the positioning note)
-  if(belt&&belt.dan){ const nx=sh[0], ny=sh[1]+6*g;
-    bctx.strokeStyle=GOLD; bctx.lineWidth=2; bctx.lineCap='butt'; bctx.beginPath();
-    bctx.moveTo(snap(nx-8*g),snap(ny-3)); bctx.quadraticCurveTo(snap(nx),snap(ny+4),snap(nx+8*g),snap(ny-3)); bctx.stroke();
-    bctx.fillStyle=GOLD; bctx.fillRect(snap(nx-3),snap(ny+2),snap(6),snap(6)); }
-  // front arm
+  // front arm (drawn before the necklace so the necklace isn't half-covered by it)
   drawBlockyLimb(sh,fHand,7*g,topColor,bctx);
+  // necklace (Dan ranks only, silver — see drawFighterClassic for the positioning note)
+  if(belt&&belt.dan){ const nx=sh[0], ny=sh[1]+6*g;
+    bctx.strokeStyle='#c9ccd4'; bctx.lineWidth=2; bctx.lineCap='butt'; bctx.beginPath();
+    bctx.moveTo(snap(nx-8*g),snap(ny-3)); bctx.quadraticCurveTo(snap(nx),snap(ny+4),snap(nx+8*g),snap(ny-3)); bctx.stroke();
+    bctx.fillStyle='#c9ccd4'; bctx.fillRect(snap(nx-3),snap(ny+2),snap(6),snap(6)); }
   // hands
   [fHand,bHand].forEach(hd=>drawBlockyCircle(hd[0],hd[1],4.5,c.skin,null,null,bctx));
   // cleaver (Imi active)
