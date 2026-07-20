@@ -60,26 +60,176 @@ const CHARACTERS = [
     special:{name:'Mawashi Geri', type:'spin'} },
 ];
 
+// ---------- Custom-character enums ---------------------------------------------
+// ponytail: single source of truth for the Create-fighter enums, shared by the Create
+// screen (index.html) and normalizeCharacter's validation below — was two copies
+// (index.html + a third hardcoded in game-logic.test.js) before the shared-roster work.
+const HAIR_ORDER = ['short','braid','bald','punk','leia','headguard'];
+const BEARD_ORDER = ['none','full','moustache','goatee','long'];
+const SPECIAL_TYPE_IDS = ['combo','throw','lunge','spin','cleaver'];
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{3,8}$/;
+
+// ---------- Character validation -----------------------------------------------
+// ponytail: the trust boundary for any character NOT authored by this codebase's own
+// Create screen — persisted localStorage records today, a shared/cloud roster next.
+// Clamps every stat to the same min/max the Create-form sliders enforce (index.html's
+// cfHp/cfSpeed/... inputs), enforces every enum, and caps name lengths (matching the
+// inputs' maxlength). Returns null for anything too broken to salvage (no id/name).
+function normalizeCharacter(raw){
+  if(!raw || typeof raw!=='object') return null;
+  if(typeof raw.id!=='string' || !raw.id) return null;
+  const num=(v,min,max,dflt)=> (typeof v==='number' && isFinite(v)) ? Math.min(max,Math.max(min,v)) : dflt;
+  const str=(v,max,dflt)=> (typeof v==='string' && v.trim()) ? v.trim().slice(0,max) : dflt;
+  const hex=(v,dflt)=> (typeof v==='string' && HEX_COLOR_RE.test(v)) ? v : dflt;
+  const raw_build = raw.build||{}, raw_hair = raw.hair||{}, raw_stats = raw.stats||{}, raw_special = raw.special||{};
+  return {
+    id: raw.id,
+    name: str(raw.name, 16, 'Fighter'),
+    beltRank: BELT_CHOICES.includes(raw.beltRank) ? raw.beltRank : null,
+    outfit: raw.outfit==='spandex' ? 'spandex' : 'gi',
+    gi: hex(raw.gi, '#16bcbc'),
+    build: { scale: num(raw_build.scale,0.8,1.25,1.0), girth: num(raw_build.girth,0.75,1.5,1.0) },
+    skin: hex(raw.skin, '#e8b98f'),
+    hair: { color: hex(raw_hair.color, '#2a2a2a'), style: HAIR_ORDER.includes(raw_hair.style) ? raw_hair.style : 'short' },
+    beard: raw.beard===true || BEARD_ORDER.includes(raw.beard) ? raw.beard : false,
+    stats: {
+      maxHp: num(raw_stats.maxHp,80,140,100),
+      speed: num(raw_stats.speed,0.8,1.35,1.0),
+      power: num(raw_stats.power,0.8,1.4,1.0),
+      defense: num(raw_stats.defense,0.8,1.2,1.0),
+    },
+    special: {
+      name: str(raw_special.name, 22, 'Special'),
+      type: SPECIAL_TYPE_IDS.includes(raw_special.type) ? raw_special.type : 'combo',
+    },
+    custom: true,
+  };
+}
+
+// ponytail: browser localStorage, or an in-memory fallback so this file runs unmodified
+// under `node --test` (Node's own experimental `localStorage` global exists but throws/no-ops
+// without a --localstorage-file flag). Shared by CharacterStore and the Supabase session below.
+function kvStore(){
+  const hasReal = typeof localStorage!=='undefined' && typeof localStorage.setItem==='function';
+  if(hasReal) return localStorage;
+  const mem={};
+  return { getItem:k=>(k in mem ? mem[k] : null), setItem:(k,v)=>{mem[k]=v;}, removeItem:k=>{delete mem[k];} };
+}
+
 // ---------- Character persistence ---------------------------------------------
 // ponytail: localStorage-backed for now, but every call returns a Promise — a future
 // fetch()-based cloud store (shared roster across players) is a drop-in swap; nothing
-// that calls CharacterStore assumes synchronous storage. Falls back to an in-memory
-// store when localStorage doesn't exist or isn't actually functional (Node's own experimental
-// `localStorage` global exists but throws/no-ops without a --localstorage-file flag), so this
-// same file runs unmodified in both the browser and `node --test`.
+// that calls CharacterStore assumes synchronous storage.
 const CharacterStore = (()=>{
   const KEY='kmp_custom_characters';
-  const hasRealStorage = typeof localStorage!=='undefined' && typeof localStorage.setItem==='function';
-  const storage = hasRealStorage ? localStorage : (()=>{
-    const mem={};
-    return { getItem:k=>(k in mem ? mem[k] : null), setItem:(k,v)=>{mem[k]=v;}, removeItem:k=>{delete mem[k];} };
-  })();
-  function readAll(){ try{ return JSON.parse(storage.getItem(KEY)||'[]'); }catch(e){ return []; } }
+  const storage = kvStore();
+  // raw records are normalized on the way out — the one point every persisted character
+  // (hand-edited storage today, a shared/cloud roster next) passes through before reaching
+  // the roster, combat math, or rendering. Malformed entries are dropped rather than crashing.
+  function readAll(){ try{ return JSON.parse(storage.getItem(KEY)||'[]').map(normalizeCharacter).filter(Boolean); }catch(e){ return []; } }
   function writeAll(list){ storage.setItem(KEY, JSON.stringify(list)); }
   return {
     list(){ return Promise.resolve(readAll()); },
     save(char){ const all=readAll(); const i=all.findIndex(c=>c.id===char.id); if(i>=0) all[i]=char; else all.push(char); writeAll(all); return Promise.resolve(char); },
     remove(id){ writeAll(readAll().filter(c=>c.id!==id)); return Promise.resolve(); },
+  };
+})();
+
+// ---------- Shared backend (Supabase): anonymous auth + write gateway ----------------------
+// ponytail: config comes from a global KEMPOKA_CONFIG (see config.js, loaded before this file
+// in index.html). No config (or an unreachable network) means every SharedStore method below
+// resolves to an empty/no-op result — the shared roster & highscore feature is entirely
+// optional, and the game plays exactly as it always has when opened offline/local.
+function sharedConfig(){
+  const c = typeof KEMPOKA_CONFIG!=='undefined' ? KEMPOKA_CONFIG : undefined;
+  return (c && c.SUPABASE_URL && c.SUPABASE_PUBLISHABLE_KEY) ? c : null;
+}
+
+// One real Supabase-managed anonymous session per browser (auth.uid() is the ownership
+// identity — see supabase-schema.sql). No email/password; just a JWT persisted locally.
+const SupaAuth = (()=>{
+  const KEY='kmp_supabase_session';
+  const store = kvStore();
+  function readSession(){ try{ return JSON.parse(store.getItem(KEY)||'null'); }catch(e){ return null; } }
+  function writeSession(tokens){ store.setItem(KEY, JSON.stringify(tokens)); return tokens; }
+  async function signUpAnonymous(cfg){
+    const res = await fetch(cfg.SUPABASE_URL+'/auth/v1/signup', {
+      method:'POST', headers:{ 'Content-Type':'application/json', apikey:cfg.SUPABASE_PUBLISHABLE_KEY }, body:'{}',
+    });
+    if(!res.ok) throw new Error('anonymous sign-up failed: '+res.status);
+    const json = await res.json();
+    return writeSession({ access_token:json.access_token, refresh_token:json.refresh_token });
+  }
+  async function refresh(cfg, refreshToken){
+    const res = await fetch(cfg.SUPABASE_URL+'/auth/v1/token?grant_type=refresh_token', {
+      method:'POST', headers:{ 'Content-Type':'application/json', apikey:cfg.SUPABASE_PUBLISHABLE_KEY },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    if(!res.ok) return null;
+    const json = await res.json();
+    return writeSession({ access_token:json.access_token, refresh_token:json.refresh_token });
+  }
+  async function accessToken(){
+    const cfg = sharedConfig(); if(!cfg) return null;
+    const session = readSession() || await signUpAnonymous(cfg).catch(()=>null);
+    return session ? session.access_token : null;
+  }
+  // Wraps a fetch call with the caller's bearer token, retrying once with a refreshed
+  // token on a 401 (an expired access token, not a real auth failure).
+  async function authedFetch(url, opts){
+    const cfg = sharedConfig(); if(!cfg) throw new Error('no shared backend configured');
+    const token = await accessToken(); if(!token) throw new Error('no session');
+    const withAuth = t=>Object.assign({}, opts, { headers: Object.assign({}, opts.headers, { apikey:cfg.SUPABASE_PUBLISHABLE_KEY, Authorization:'Bearer '+t }) });
+    let res = await fetch(url, withAuth(token));
+    if(res.status===401){
+      const session = readSession();
+      const refreshed = session && await refresh(cfg, session.refresh_token);
+      if(refreshed) res = await fetch(url, withAuth(refreshed.access_token));
+    }
+    return res;
+  }
+  return { accessToken, authedFetch };
+})();
+
+// Public reads go straight to PostgREST; all writes go through the kempoka-write Edge
+// Function (Turnstile-verified, service_role) — see supabase-schema.sql for why direct
+// writes are denied by RLS. Every method degrades to []/false rather than throwing.
+const SharedStore = (()=>{
+  async function listCharacters(){
+    const cfg = sharedConfig(); if(!cfg) return [];
+    try{
+      const res = await fetch(cfg.SUPABASE_URL+'/rest/v1/characters?select=data', { headers:{ apikey:cfg.SUPABASE_PUBLISHABLE_KEY } });
+      if(!res.ok) return [];
+      const rows = await res.json();
+      return rows.map(r=>normalizeCharacter(r.data)).filter(Boolean);
+    }catch(e){ return []; }
+  }
+  async function writeAction(action, payload, turnstileToken){
+    const cfg = sharedConfig(); if(!cfg) return false;
+    try{
+      const res = await SupaAuth.authedFetch(cfg.SUPABASE_URL+'/functions/v1/kempoka-write', {
+        method:'POST', headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ action, payload, turnstileToken }),
+      });
+      return res.ok;
+    }catch(e){ return false; }
+  }
+  async function topScores(limit){
+    const cfg = sharedConfig(); if(!cfg) return [];
+    try{
+      const res = await fetch(cfg.SUPABASE_URL+'/rest/v1/scores?select=name,score,beaten&order=score.desc&limit='+(limit||20), { headers:{ apikey:cfg.SUPABASE_PUBLISHABLE_KEY } });
+      return res.ok ? await res.json() : [];
+    }catch(e){ return []; }
+  }
+  return {
+    // lets the UI hide publish/tournament-submit affordances entirely when no backend is
+    // configured, instead of rendering a Turnstile widget for a feature that's fully off.
+    isConfigured:()=>!!sharedConfig(),
+    listCharacters,
+    publishCharacter:(char, turnstileToken)=>writeAction('publish_character', char, turnstileToken),
+    unpublishCharacter:(turnstileToken)=>writeAction('unpublish_character', null, turnstileToken),
+    submitScore:(entry, turnstileToken)=>writeAction('submit_score', entry, turnstileToken),
+    topScores,
   };
 })();
 
@@ -108,10 +258,16 @@ const KICKS = {
 };
 const GRAV=2200, JUMP_V=-820, CLINCH_RANGE=64, CLINCH_WINDOW=1.5, REVERSAL_WINDOW=0.4;
 const ROUND_TIME=60, WINS_NEEDED=2;
+// Tournament mode: one round per opponent (no best-of-3), so it needs longer than a normal
+// round to be a fair single shot — 120s, unlike ROUND_TIME which only ever decides one of three.
+const TOURNEY_ROUND_TIME=120;
 
 // ---------- Combat math (pure — no DOM, no globals besides the above) ---------
 function computeDamage(base,attacker,defender,blocking){
-  let d = base * attacker.char.stats.power / defender.char.stats.defense;
+  // ponytail: floor guards against a persisted/shared defense:0 (or negative) producing
+  // Infinity/NaN damage, which would leave HP stuck at NaN and the round unable to end.
+  const defense = Math.max(0.1, defender.char.stats.defense);
+  let d = base * attacker.char.stats.power / defense;
   if(blocking) d *= 0.2;
   return d;
 }
@@ -177,8 +333,8 @@ const I18N = {
   touchHint:{en:'On the touch pad, hold a D-pad direction together with an attack button for the variants.',de:'Halte auf dem Touch-Pad eine Richtung zusammen mit einer Angriffstaste für die Varianten.',es:'En el panel táctil, mantén una dirección junto con un botón de ataque para las variantes.',it:'Sul pad touch, tieni premuta una direzione insieme a un tasto attacco per le varianti.',fr:'Sur le pad tactile, maintenez une direction avec un bouton d\'attaque pour les variantes.',hu:'Az érintőpanelen tarts lenyomva egy irányt egy támadógombbal együtt a változatokért.'},
   touchJump:{en:'JUMP',de:'SPRUNG',es:'SALTO',it:'SALTO',fr:'SAUT',hu:'UGRÁS'},
   touchDuck:{en:'DUCK',de:'DUCKEN',es:'AGACH',it:'ACCOV',fr:'BAISSE',hu:'GUGGOL'},
-  touchPunch:{en:'P',de:'S',es:'P',it:'P',fr:'P',hu:'Ü'},
-  touchKick:{en:'K',de:'T',es:'P',it:'C',fr:'P',hu:'R'},
+  touchPunch:{en:'P',de:'S',es:'PUÑO',it:'P',fr:'POING',hu:'Ü'},
+  touchKick:{en:'K',de:'T',es:'PATADA',it:'C',fr:'PIED',hu:'R'},
   touchBlock:{en:'BLK',de:'BLK',es:'BLQ',it:'PAR',fr:'BLQ',hu:'VÉD'},
   touchSpecial:{en:'SP',de:'SP',es:'ESP',it:'SP',fr:'SP',hu:'SP'},
   touchGrab:{en:'GRAB',de:'GREIF',es:'AGARR',it:'PRESA',fr:'SAISIE',hu:'DOBÁS'},
@@ -211,7 +367,7 @@ const I18N = {
   powerStat:{en:'Power',de:'Kraft',es:'Poder',it:'Potenza',fr:'Puissance',hu:'Erő'},
   defenseStat:{en:'Defense',de:'Verteidigung',es:'Defensa',it:'Difesa',fr:'Défense',hu:'Védekezés'},
   heightStat:{en:'Height',de:'Größe',es:'Altura',it:'Altezza',fr:'Taille',hu:'Magasság'},
-  girthStat:{en:'Girth',de:'Statur',es:'Corpulencia',it:'Corporatura',fr:'Carrure',hu:'Testtömeg'},
+  girthStat:{en:'Girth',de:'Statur',es:'Corpulencia',it:'Corporatura',fr:'Corpulence',hu:'Testtömeg'},
   typeLabel:{en:'Type',de:'Typ',es:'Tipo',it:'Tipo',fr:'Type',hu:'Típus'},
   nameFieldLabel:{en:'Name',de:'Name',es:'Nombre',it:'Nome',fr:'Nom',hu:'Név'},
   preview:{en:'PREVIEW',de:'VORSCHAU',es:'VISTA PREVIA',it:'ANTEPRIMA',fr:'APERÇU',hu:'ELŐNÉZET'},
@@ -220,6 +376,20 @@ const I18N = {
   noFightersYet:{en:'None yet — create your first fighter above.',de:'Noch keine — erstelle oben deinen ersten Kämpfer.',es:'Ninguno todavía — crea tu primer luchador arriba.',it:'Ancora nessuno — crea il tuo primo lottatore qui sopra.',fr:'Aucun pour l\'instant — créez votre premier combattant ci-dessus.',hu:'Még nincs — hozd létre az első harcosodat fent.'},
   moreFighters:{en:'+{n} more (also visible in fighter select)',de:'+{n} weitere (auch in der Kämpferauswahl sichtbar)',es:'+{n} más (también visibles en la selección de luchador)',it:'+{n} altri (visibili anche nella selezione lottatore)',fr:'+{n} de plus (visibles aussi dans la sélection des combattants)',hu:'+{n} további (a harcosválasztóban is látható)'},
   edit:{en:'EDIT',de:'BEARBEITEN',es:'EDITAR',it:'MODIFICA',fr:'MODIFIER',hu:'SZERKESZTÉS'},
+  nameTaken:{en:'Name taken — you can still save',de:'Name bereits vergeben — Speichern trotzdem möglich',es:'Nombre en uso — puedes guardarlo igual',it:'Nome già in uso — puoi salvare comunque',fr:'Nom déjà pris — vous pouvez quand même enregistrer',hu:'A név már foglalt — mentés így is lehetséges'},
+  publish:{en:'PUBLISH',de:'VERÖFFENTLICHEN',es:'PUBLICAR',it:'PUBBLICA',fr:'PUBLIER',hu:'KÖZZÉTÉTEL'},
+  published:{en:'PUBLISHED',de:'VERÖFFENTLICHT',es:'PUBLICADO',it:'PUBBLICATO',fr:'PUBLIÉ',hu:'KÖZZÉTÉVE'},
+  tournament:{en:'TOURNAMENT',de:'TURNIER',es:'TORNEO',it:'TORNEO',fr:'TOURNOI',hu:'BAJNOKSÁG'},
+  highScores:{en:'HIGH SCORES',de:'BESTENLISTE',es:'MEJORES PUNTUACIONES',it:'MIGLIORI PUNTEGGI',fr:'MEILLEURS SCORES',hu:'TOPLISTA'},
+  tourneyProgress:{en:'OPPONENT {n}/{m}',de:'GEGNER {n}/{m}',es:'RIVAL {n}/{m}',it:'AVVERSARIO {n}/{m}',fr:'ADVERSAIRE {n}/{m}',hu:'ELLENFÉL {n}/{m}'},
+  newHighScore:{en:'NEW HIGH SCORE',de:'NEUER REKORD',es:'NUEVO RÉCORD',it:'NUOVO RECORD',fr:'NOUVEAU RECORD',hu:'ÚJ REKORD'},
+  tourneyBeaten:{en:'Beaten: {n} fighters',de:'Besiegt: {n} Kämpfer',es:'Derrotados: {n} luchadores',it:'Sconfitti: {n} lottatori',fr:'Vaincus : {n} combattants',hu:'Legyőzve: {n} harcos'},
+  tourneyScore:{en:'Score: {n}',de:'Punktzahl: {n}',es:'Puntuación: {n}',it:'Punteggio: {n}',fr:'Score : {n}',hu:'Pontszám: {n}'},
+  submitScore:{en:'SUBMIT SCORE',de:'PUNKTZAHL SENDEN',es:'ENVIAR PUNTUACIÓN',it:'INVIA PUNTEGGIO',fr:'ENVOYER LE SCORE',hu:'PONTSZÁM KÜLDÉSE'},
+  skip:{en:'SKIP',de:'ÜBERSPRINGEN',es:'OMITIR',it:'SALTA',fr:'PASSER',hu:'KIHAGYÁS'},
+  rankHeader:{en:'RANK',de:'RANG',es:'PUESTO',it:'POSTO',fr:'RANG',hu:'HELYEZÉS'},
+  scoreHeader:{en:'SCORE',de:'PUNKTE',es:'PUNTOS',it:'PUNTI',fr:'SCORE',hu:'PONT'},
+  noScoresYet:{en:'No scores yet — be the first!',de:'Noch keine Einträge — sei der Erste!',es:'Aún no hay puntuaciones — ¡sé el primero!',it:'Ancora nessun punteggio — sii il primo!',fr:'Aucun score pour l\'instant — soyez le premier !',hu:'Még nincs eredmény — legyél te az első!'},
   randomize:{en:'RANDOMIZE',de:'ZUFÄLLIG',es:'ALEATORIO',it:'CASUALE',fr:'ALÉATOIRE',hu:'VÉLETLEN'},
   saveFighter:{en:'SAVE FIGHTER',de:'KÄMPFER SPEICHERN',es:'GUARDAR LUCHADOR',it:'SALVA LOTTATORE',fr:'ENREGISTRER LE COMBATTANT',hu:'HARCOS MENTÉSE'},
   fighterNamePlaceholder:{en:'Fighter name',de:'Kämpfername',es:'Nombre del luchador',it:'Nome del lottatore',fr:'Nom du combattant',hu:'Harcos neve'},
@@ -259,11 +429,11 @@ const I18N = {
   belt_kyu9:{en:'Green Belt',de:'Grüner Gürtel',es:'Cinturón verde',it:'Cintura verde',fr:'Ceinture verte',hu:'Zöld öv'},
   belt_kyu8:{en:'Blue Belt',de:'Blauer Gürtel',es:'Cinturón azul',it:'Cintura blu',fr:'Ceinture bleue',hu:'Kék öv'},
   belt_kyu7:{en:'Purple Belt',de:'Violetter Gürtel',es:'Cinturón morado',it:'Cintura viola',fr:'Ceinture violette',hu:'Lila öv'},
-  belt_kyu6:{en:'Purple Belt (brown tip)',de:'Violetter Gürtel (brauner Tip)',es:'Cinturón morado (punta marrón)',it:'Cintura viola (punta marrone)',fr:'Ceinture violette (pointe marron)',hu:'Lila öv (barna véggel)'},
+  belt_kyu6:{en:'Purple Belt (brown tip)',de:'Violetter Gürtel (braune Spitze)',es:'Cinturón morado (punta marrón)',it:'Cintura viola (punta marrone)',fr:'Ceinture violette (pointe marron)',hu:'Lila öv (barna véggel)'},
   belt_kyu5:{en:'Brown Belt (white stripe)',de:'Brauner Gürtel (weißer Streifen)',es:'Cinturón marrón (franja blanca)',it:'Cintura marrone (striscia bianca)',fr:'Ceinture marron (bande blanche)',hu:'Barna öv (fehér csíkkal)'},
-  belt_kyu4:{en:'Brown Belt (white stripe, black tip)',de:'Brauner Gürtel (weißer Streifen, schwarzer Tip)',es:'Cinturón marrón (franja blanca, punta negra)',it:'Cintura marrone (striscia bianca, punta nera)',fr:'Ceinture marron (bande blanche, pointe noire)',hu:'Barna öv (fehér csík, fekete vég)'},
+  belt_kyu4:{en:'Brown Belt (white stripe, black tip)',de:'Brauner Gürtel (weißer Streifen, schwarze Spitze)',es:'Cinturón marrón (franja blanca, punta negra)',it:'Cintura marrone (striscia bianca, punta nera)',fr:'Ceinture marron (bande blanche, pointe noire)',hu:'Barna öv (fehér csík, fekete vég)'},
   belt_kyu3:{en:'Brown Belt',de:'Brauner Gürtel',es:'Cinturón marrón',it:'Cintura marrone',fr:'Ceinture marron',hu:'Barna öv'},
-  belt_kyu2:{en:'Brown Belt (black tip)',de:'Brauner Gürtel (schwarzer Tip)',es:'Cinturón marrón (punta negra)',it:'Cintura marrone (punta nera)',fr:'Ceinture marron (pointe noire)',hu:'Barna öv (fekete véggel)'},
+  belt_kyu2:{en:'Brown Belt (black tip)',de:'Brauner Gürtel (schwarze Spitze)',es:'Cinturón marrón (punta negra)',it:'Cintura marrone (punta nera)',fr:'Ceinture marron (pointe noire)',hu:'Barna öv (fekete véggel)'},
   belt_kyu1:{en:'Brown Belt (black stripe)',de:'Brauner Gürtel (schwarzer Streifen)',es:'Cinturón marrón (franja negra)',it:'Cintura marrone (striscia nera)',fr:'Ceinture marron (bande noire)',hu:'Barna öv (fekete csíkkal)'},
   belt_dan1:{en:'1st Dan (Black Belt)',de:'1. Dan (Schwarzer Gürtel)',es:'1er Dan (Cinturón negro)',it:'1° Dan (Cintura nera)',fr:'1er Dan (Ceinture noire)',hu:'1. Dan (Fekete öv)'},
   belt_dan2:{en:'2nd Dan (Black Belt)',de:'2. Dan (Schwarzer Gürtel)',es:'2º Dan (Cinturón negro)',it:'2° Dan (Cintura nera)',fr:'2e Dan (Ceinture noire)',hu:'2. Dan (Fekete öv)'},
@@ -282,8 +452,9 @@ function detectDefaultLang(languages){
 
 const exportsObj = {
   GOLD, KYU_RANKS, DAN_RANKS, BELT_TABLE, getBelt, giAboveBlue, GI_BLACK, GI_WHITE, BELT_CHOICES, beltLabel,
-  CHARACTERS, CharacterStore,
-  MOVES, PUNCHES, KICKS, GRAV, JUMP_V, CLINCH_RANGE, CLINCH_WINDOW, REVERSAL_WINDOW, ROUND_TIME, WINS_NEEDED,
+  CHARACTERS, CharacterStore, SharedStore,
+  HAIR_ORDER, BEARD_ORDER, SPECIAL_TYPE_IDS, normalizeCharacter,
+  MOVES, PUNCHES, KICKS, GRAV, JUMP_V, CLINCH_RANGE, CLINCH_WINDOW, REVERSAL_WINDOW, ROUND_TIME, WINS_NEEDED, TOURNEY_ROUND_TIME,
   computeDamage, fh, bodyRect, rectsOverlap, inClinchRange, faceDir, moveDir,
   SUPPORTED_LANGS, I18N, t, detectDefaultLang,
 };

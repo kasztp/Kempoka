@@ -1,2 +1,16 @@
 .DS_Store
+Thumbs.db
 node_modules/
+npm-debug.log*
+
+# Supabase CLI local state (project link, local branches) — machine-specific, never committed.
+# NOTE: config.js is intentionally NOT listed here — its Supabase URL/publishable key/Turnstile
+# site key are meant to be public and shipped in client code (see its own comments for why).
+supabase/.temp/
+supabase/.branches/
+.env
+.env.local
+
+# Editors
+.vscode/
+.idea/

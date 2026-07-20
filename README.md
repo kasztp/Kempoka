@@ -94,12 +94,13 @@ master" look. **🎲 Randomize** fills the whole form for a quick generated figh
 appear in every fighter-select screen alongside the built-ins (with a small badge), and can be
 edited or deleted from the **Create Fighter** screen's "My Fighters" list.
 
-Custom fighters are saved via `CharacterStore` (`game-logic.js`), currently backed by `localStorage` —
-**per-browser only, not shared between players.** The store's `list()/save()/remove()` all return
-Promises even though `localStorage` itself is synchronous, specifically so it can be swapped for a
-`fetch()`-based cloud API (a shared roster / leaderboard backend) later without touching any of the
-calling code — `enterCreate`, `saveDraft`, `deleteCustom`, etc. only ever await the interface, never
-`localStorage` directly.
+Custom fighters are saved via `CharacterStore` (`game-logic.js`), backed by `localStorage` —
+**per-browser only, not shared between players**, and that stays true by design: you can keep as
+many local/private fighters as you like. The store's `list()/save()/remove()` all return Promises
+even though `localStorage` itself is synchronous, specifically so it was a drop-in swap for a
+`fetch()`-based cloud API later — which is exactly what happened, as an *addition* rather than a
+replacement: see **Shared roster & highscores** below for `SharedStore`, the optional layer that
+lets you publish exactly one of these local fighters for other players to see and fight.
 
 ## Fullscreen / exit to menu
 
@@ -149,6 +150,54 @@ English source, and neither should ever overflow or collide with a neighboring l
 1-Player now always shows a second **"Choose CPU Opponent"** select screen after you pick your own
 fighter — pick anyone in the roster (built-in or custom), or hit **🎲 Random CPU** for the old
 random-pick behavior.
+
+## Shared roster & highscores (optional)
+
+Kempoka works exactly as described above with zero setup — everything is local/offline by
+default. Filling in `config.js` turns on two extra features, backed by a free
+[Supabase](https://supabase.com) project:
+
+- **Publish a fighter** — from Create Fighter's "My Fighters" list, publish exactly one of your
+  local fighters as your public character. Other players see it as a selectable CPU opponent
+  (badged the same as any custom fighter); publishing again overwrites your previous one.
+- **Tournament + retro highscore list** — main menu → **TOURNAMENT**: beat every other character
+  in the roster in sequence, one 120-second round each, with your own published-or-not fighter as
+  the final boss. Score = `(fighters beaten × 100) + (seconds left in each match you won)`. Submit
+  your run's score under a name and it appears on the shared, persistent **HIGH SCORES** list.
+
+No login: each browser gets one anonymous identity (a Supabase-managed session, invisible to you)
+that owns its own published fighter and can submit scores. Writes are gated by an (almost always
+invisible) [Cloudflare Turnstile](https://developers.cloudflare.com/turnstile/) challenge so the
+public write endpoints resist scripted spam.
+
+### Setup
+
+1. **Create a Supabase project** (free tier is enough) at [supabase.com](https://supabase.com).
+2. **Run the schema**: Project → SQL Editor → paste in [`supabase-schema.sql`](supabase-schema.sql)
+   → Run. This creates the `characters`/`scores` tables with read-only row-level security — direct
+   writes are denied by design; see the file's comments for why.
+3. **Enable Anonymous sign-ins**: Project Settings → Authentication → Providers → toggle on
+   "Anonymous Sign-Ins".
+4. **Create a Cloudflare Turnstile widget**: [Cloudflare dashboard](https://dash.cloudflare.com) →
+   Turnstile → Add site (any widget mode). Note its **Site Key** and **Secret Key**.
+5. **Deploy the write gateway** (a Supabase Edge Function — the only path that's allowed to write;
+   see [`supabase/functions/kempoka-write/index.ts`](supabase/functions/kempoka-write/index.ts) for
+   what it does and why):
+   ```
+   supabase functions deploy kempoka-write --project-ref <your-project-ref>
+   supabase secrets set TURNSTILE_SECRET_KEY=<Turnstile secret> --project-ref <your-project-ref>
+   ```
+   That's the only secret to set by hand — `SUPABASE_URL` and the project's publishable/secret
+   keys are auto-injected for every Edge Function. (Supabase is retiring the legacy `anon`/
+   `service_role` keys in favor of **Publishable**/**Secret** keys; the function picks up
+   whichever your project has configured.)
+6. **Fill in [`config.js`](config.js)** with your project's URL, its **Publishable** key (Project
+   Settings → API Keys), and the Turnstile **Site** Key (all three are meant to be public — see
+   the comments in that file for why). Reload the game; the Publish button and Tournament/High
+   Scores features light up automatically.
+
+Leave `config.js` blank (its default) to keep playing fully offline/local, exactly as before this
+section existed.
 
 ## Credits
 
