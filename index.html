@@ -989,6 +989,14 @@ async function togglePublish(c){
   publishBusyId=null;
 }
 
+// advisory only — names aren't unique server-side (only one published fighter per account is
+// enforced), so this just warns about a clash with another player's published fighter; it never
+// blocks saving/publishing.
+function nameCollision(){
+  const n=(draft.name||'').trim().toLowerCase();
+  return !!n && sharedCharacters.some(c=>c.id!==draft.id && c.name.trim().toLowerCase()===n);
+}
+
 function drawCreate(){
   buttons=[]; bg2(); readUIIntoDraft();
   ctx.fillStyle=GOLD; ctx.textAlign='center'; ctx.font='bold 28px "Trebuchet MS"'; ctx.fillText(t(lang,'createFighter'),W/2,38); hairline(52);
@@ -996,7 +1004,8 @@ function drawCreate(){
 
   // left column: identity
   ctx.fillStyle=GOLD; ctx.font='bold 13px "Trebuchet MS"'; ctx.fillText(t(lang,'name'),60,74); placeEl(createUI.name,60,80,230,28);
-  ctx.fillText(t(lang,'beltRank'),60,138);
+  if(nameCollision()){ ctx.fillStyle='#e0a030'; fitText(t(lang,'nameTaken'),60,122,280,11,false); }
+  ctx.fillStyle=GOLD; ctx.font='bold 13px "Trebuchet MS"'; ctx.fillText(t(lang,'beltRank'),60,138);
   btn(60,144,26,26,'◀',()=>{ const i=BELT_CHOICES.indexOf(draft.beltRank); draft.beltRank=BELT_CHOICES[(i-1+BELT_CHOICES.length)%BELT_CHOICES.length]; },false);
   btn(316,144,26,26,'▶',()=>{ const i=BELT_CHOICES.indexOf(draft.beltRank); draft.beltRank=BELT_CHOICES[(i+1)%BELT_CHOICES.length]; },false);
   ctx.fillStyle='#e6dcc0'; ctx.textAlign='center'; fitText(t(lang,'belt_'+(draft.beltRank||'none')),188,162,316-86-16,13,false); ctx.textAlign='left';

@@ -376,6 +376,7 @@ const I18N = {
   noFightersYet:{en:'None yet — create your first fighter above.',de:'Noch keine — erstelle oben deinen ersten Kämpfer.',es:'Ninguno todavía — crea tu primer luchador arriba.',it:'Ancora nessuno — crea il tuo primo lottatore qui sopra.',fr:'Aucun pour l\'instant — créez votre premier combattant ci-dessus.',hu:'Még nincs — hozd létre az első harcosodat fent.'},
   moreFighters:{en:'+{n} more (also visible in fighter select)',de:'+{n} weitere (auch in der Kämpferauswahl sichtbar)',es:'+{n} más (también visibles en la selección de luchador)',it:'+{n} altri (visibili anche nella selezione lottatore)',fr:'+{n} de plus (visibles aussi dans la sélection des combattants)',hu:'+{n} további (a harcosválasztóban is látható)'},
   edit:{en:'EDIT',de:'BEARBEITEN',es:'EDITAR',it:'MODIFICA',fr:'MODIFIER',hu:'SZERKESZTÉS'},
+  nameTaken:{en:'Name taken — you can still save',de:'Name bereits vergeben — Speichern trotzdem möglich',es:'Nombre en uso — puedes guardarlo igual',it:'Nome già in uso — puoi salvare comunque',fr:'Nom déjà pris — vous pouvez quand même enregistrer',hu:'A név már foglalt — mentés így is lehetséges'},
   publish:{en:'PUBLISH',de:'VERÖFFENTLICHEN',es:'PUBLICAR',it:'PUBBLICA',fr:'PUBLIER',hu:'KÖZZÉTÉTEL'},
   published:{en:'PUBLISHED',de:'VERÖFFENTLICHT',es:'PUBLICADO',it:'PUBBLICATO',fr:'PUBLIÉ',hu:'KÖZZÉTÉVE'},
   tournament:{en:'TOURNAMENT',de:'TURNIER',es:'TORNEO',it:'TORNEO',fr:'TOURNOI',hu:'BAJNOKSÁG'},
