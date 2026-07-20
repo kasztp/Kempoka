@@ -5,7 +5,8 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const {
   KYU_RANKS, DAN_RANKS, BELT_TABLE, getBelt, giAboveBlue, BELT_CHOICES, beltLabel,
-  CHARACTERS, CharacterStore,
+  CHARACTERS, CharacterStore, SharedStore,
+  HAIR_ORDER, BEARD_ORDER, SPECIAL_TYPE_IDS, normalizeCharacter,
   MOVES, PUNCHES, KICKS, CLINCH_RANGE,
   computeDamage, fh, bodyRect, rectsOverlap, inClinchRange, faceDir, moveDir,
   SUPPORTED_LANGS, I18N, t, detectDefaultLang,
@@ -130,7 +131,6 @@ test('BELT_CHOICES: null + every kyu + every dan, and beltLabel matches getBelt'
 });
 
 // ---------- roster ----------------------------------------------------------------
-const SPECIAL_TYPES = ['combo','throw','lunge','spin','cleaver'];
 test('CHARACTERS: five built-ins, unique ids, valid belt/outfit/stats/special', () => {
   assert.equal(CHARACTERS.length, 5);
   const ids = new Set(CHARACTERS.map(c=>c.id));
@@ -139,8 +139,69 @@ test('CHARACTERS: five built-ins, unique ids, valid belt/outfit/stats/special', 
     assert.ok(c.beltRank===null || BELT_TABLE[c.beltRank], `${c.name} has an unknown beltRank`);
     assert.ok(c.outfit==='gi' || c.outfit==='spandex', `${c.name} has an invalid outfit`);
     for(const k of ['maxHp','speed','power','defense']) assert.ok(c.stats[k]>0, `${c.name}.stats.${k} must be positive`);
-    assert.ok(SPECIAL_TYPES.includes(c.special.type), `${c.name} has an unknown special type`);
+    assert.ok(SPECIAL_TYPE_IDS.includes(c.special.type), `${c.name} has an unknown special type`);
   }
+});
+
+// ---------- character validation (the shared/persisted-data trust boundary) -------
+test('normalizeCharacter: rejects non-objects and records with no usable id', () => {
+  assert.equal(normalizeCharacter(null), null);
+  assert.equal(normalizeCharacter(undefined), null);
+  assert.equal(normalizeCharacter('nope'), null);
+  assert.equal(normalizeCharacter({}), null);
+  assert.equal(normalizeCharacter({id:''}), null);
+});
+test('normalizeCharacter: fills in every missing field with a safe default', () => {
+  const c = normalizeCharacter({ id:'x' });
+  assert.equal(c.name, 'Fighter');
+  assert.equal(c.beltRank, null);
+  assert.equal(c.outfit, 'gi');
+  assert.equal(c.build.scale, 1.0); assert.equal(c.build.girth, 1.0);
+  assert.equal(c.hair.style, 'short');
+  assert.equal(c.beard, false);
+  assert.equal(c.stats.maxHp, 100);
+  assert.ok(SPECIAL_TYPE_IDS.includes(c.special.type));
+  assert.equal(c.custom, true);
+});
+test('normalizeCharacter: clamps out-of-range stats/build to the Create-form slider bounds', () => {
+  const c = normalizeCharacter({ id:'x', stats:{maxHp:9999,speed:-5,power:0,defense:0}, build:{scale:99,girth:-1} });
+  assert.equal(c.stats.maxHp, 140); assert.equal(c.stats.speed, 0.8);
+  assert.equal(c.stats.power, 0.8); assert.equal(c.stats.defense, 0.8);
+  assert.equal(c.build.scale, 1.25); assert.equal(c.build.girth, 0.75);
+});
+test('normalizeCharacter: NaN/non-numeric stats fall back to the default rather than passing through', () => {
+  const c = normalizeCharacter({ id:'x', stats:{maxHp:NaN,speed:'fast',power:undefined,defense:null} });
+  assert.equal(c.stats.maxHp, 100); assert.equal(c.stats.speed, 1.0);
+  assert.equal(c.stats.power, 1.0); assert.equal(c.stats.defense, 1.0);
+});
+test('normalizeCharacter: rejects unknown enum values (belt/outfit/hair/beard/special type)', () => {
+  const c = normalizeCharacter({ id:'x', beltRank:'kyu99', outfit:'ninja', hair:{style:'mohawk'}, beard:'werewolf', special:{type:'fireball'} });
+  assert.equal(c.beltRank, null); assert.equal(c.outfit, 'gi');
+  assert.equal(c.hair.style, 'short'); assert.equal(c.beard, false); assert.equal(c.special.type, 'combo');
+});
+test('normalizeCharacter: accepts every real HAIR_ORDER/BEARD_ORDER/SPECIAL_TYPE_IDS value', () => {
+  for(const style of HAIR_ORDER) assert.equal(normalizeCharacter({id:'x',hair:{style}}).hair.style, style);
+  for(const beard of BEARD_ORDER) assert.equal(normalizeCharacter({id:'x',beard}).beard, beard);
+  for(const type of SPECIAL_TYPE_IDS) assert.equal(normalizeCharacter({id:'x',special:{type}}).special.type, type);
+});
+test('normalizeCharacter: truncates over-long name/special.name to the input maxlength', () => {
+  const c = normalizeCharacter({ id:'x', name:'x'.repeat(50), special:{name:'y'.repeat(50)} });
+  assert.equal(c.name.length, 16);
+  assert.equal(c.special.name.length, 22);
+});
+test('normalizeCharacter: rejects malformed hex colors, keeps valid ones', () => {
+  const bad = normalizeCharacter({ id:'x', skin:'not-a-color', hair:{color:'javascript:alert(1)'}, gi:'#zzz' });
+  assert.match(bad.skin, /^#[0-9a-fA-F]{3,8}$/);
+  assert.match(bad.hair.color, /^#[0-9a-fA-F]{3,8}$/);
+  assert.match(bad.gi, /^#[0-9a-fA-F]{3,8}$/);
+  const good = normalizeCharacter({ id:'x', skin:'#123456' });
+  assert.equal(good.skin, '#123456');
+});
+test('computeDamage: a zero or negative defense is floored, never producing Infinity/NaN', () => {
+  const a=makeStub(), zeroDef=makeStub({char:{build:{scale:1,girth:1},stats:{power:1,speed:1,defense:0,maxHp:100}}});
+  const negDef=makeStub({char:{build:{scale:1,girth:1},stats:{power:1,speed:1,defense:-5,maxHp:100}}});
+  assert.ok(Number.isFinite(computeDamage(10,a,zeroDef,false)), 'defense:0 must not produce Infinity/NaN');
+  assert.ok(Number.isFinite(computeDamage(10,a,negDef,false)), 'negative defense must not produce Infinity/NaN');
 });
 
 // ---------- CharacterStore (in-memory fallback in Node, same API as the browser) -
@@ -162,6 +223,15 @@ test('CharacterStore: saving the same id twice updates rather than duplicates', 
   assert.equal(matches.length, 1, 'should not duplicate on re-save');
   assert.equal(matches[0].name, 'Second');
   await CharacterStore.remove(id);
+});
+
+// ---------- SharedStore (Supabase-backed; degrades to no-ops without KEMPOKA_CONFIG) ----
+test('SharedStore: with no backend configured, every method resolves safely and never throws', async () => {
+  assert.deepEqual(await SharedStore.listCharacters(), []);
+  assert.equal(await SharedStore.publishCharacter({id:'x'}, 'tok'), false);
+  assert.equal(await SharedStore.unpublishCharacter('tok'), false);
+  assert.equal(await SharedStore.submitScore({name:'a',score:100,beaten:1}, 'tok'), false);
+  assert.deepEqual(await SharedStore.topScores(10), []);
 });
 
 // ---------- i18n ---------------------------------------------------------------

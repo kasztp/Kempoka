@@ -22,6 +22,9 @@
   /* fighter-creation form overlay (native inputs positioned over the canvas) */
   #createUI { position:fixed; inset:0; display:none; pointer-events:none; z-index:20; }
   #createUI.on { display:block; }
+  /* tournament score-entry name field, same overlay mechanism as #createUI */
+  #scoreUI { position:fixed; inset:0; display:none; pointer-events:none; z-index:20; }
+  #scoreUI.on { display:block; }
   .cfield { position:fixed; pointer-events:auto; box-sizing:border-box; background:#20180f; color:#f2ede0;
     border:1px solid rgba(245,168,0,.6); border-radius:4px; font:13px "Trebuchet MS"; padding:0 6px; }
   input.cfield[type=color] { padding:2px; }
@@ -35,6 +38,11 @@
   .cornerBtn:active { background:rgba(245,168,0,.35); }
   #fsBtn { right:8px; }
   #exitBtn { right:46px; font-size:17px; }
+  /* Cloudflare Turnstile mount point — shown only while a shared-backend write (publish a
+     fighter, submit a tournament score) is in flight and needs a token; positioned per-screen
+     via placeEl(), same mechanism as the .cfield inputs above. */
+  #turnstileHost { position:fixed; pointer-events:auto; z-index:25; display:none; }
+  #turnstileHost.on { display:block; }
 </style>
 <div id="wrap"><canvas id="cv" width="960" height="540"></canvas></div>
 <div id="exitBtn" class="cornerBtn" title="Exit to Menu">⌂</div>
@@ -64,12 +72,22 @@
   <input id="cfGirth" class="cfield" type="range" min="0.75" max="1.5" step="0.01">
   <select id="cfSpecialType" class="cfield"></select>
 </div>
+<div id="scoreUI">
+  <input id="scoreName" class="cfield" type="text" maxlength="16" placeholder="Your name">
+</div>
+<div id="turnstileHost"></div>
+<script src="config.js"></script>
 <script src="game-logic.js"></script>
+<!-- Cloudflare Turnstile widget script — only used by the publish/score-entry screens (Part 3).
+     Loaded async so a blocked/offline network never delays or breaks the page; if it fails to
+     load, window.turnstile stays undefined and those screens simply disable shared writes. -->
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 <script>
 "use strict";
 // Belt table, roster, move tables, CharacterStore, and combat math (computeDamage/fh/bodyRect/
 // rectsOverlap/inClinchRange/faceDir/moveDir) all live in game-logic.js now — loaded above as a
 // classic script, so GOLD/KYU_RANKS/CHARACTERS/CharacterStore/MOVES/etc. are already globals here.
+// config.js (loaded first) defines window.KEMPOKA_CONFIG, consulted by SharedStore internally.
 const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
 const W = 960, H = 540, GROUND = 476, INK = '#1a1a1a';
 
@@ -86,11 +104,19 @@ function canvasContentRect(){
   return {left:cx, top:cy, width:cw, height:ch};
 }
 
-// ROSTER = built-ins + custom fighters; everything that lists/selects a fighter reads
-// this (not CHARACTERS directly), so a custom fighter shows up everywhere automatically.
-let customCharacters=[], ROSTER=CHARACTERS.slice();
-function refreshRoster(){ ROSTER=CHARACTERS.concat(customCharacters); }
+// ROSTER = built-ins + local custom fighters + other players' published fighters (shared,
+// only present with a backend configured). Everything that lists/selects a fighter reads this
+// (not CHARACTERS directly), so any of these shows up everywhere automatically, selectable as
+// a CPU opponent like any built-in. A shared entry with the same id as one of your own local
+// fighters (i.e. your own published fighter, read back from the server) is skipped — the local
+// copy is already current and doesn't need a round trip to see.
+let customCharacters=[], sharedCharacters=[], ROSTER=CHARACTERS.slice();
+function refreshRoster(){
+  const localIds = new Set(customCharacters.map(c=>c.id));
+  ROSTER = CHARACTERS.concat(customCharacters, sharedCharacters.filter(c=>!localIds.has(c.id)));
+}
 CharacterStore.list().then(list=>{ customCharacters=list; refreshRoster(); });
+SharedStore.listCharacters().then(list=>{ sharedCharacters=list; refreshRoster(); });
 
 // ---------- Audio (Web Audio, no files) --------------------------------------
 const Audio = (()=>{
@@ -789,10 +815,12 @@ function drawMenu(){
   btn(W/2-150,228,300,44,t(lang,'onePlayer'),()=>{mode='1p';gotoSelect();},false);
   btn(W/2-150,278,300,44,t(lang,'twoPlayers'),()=>{mode='2p';gotoSelect();},false);
   btn(W/2-150,328,300,40,t(lang,'createFighter'),()=>enterCreate(),false);
-  btn(W/2-150,374,300,38,t(lang,'controls'),()=>{state='controls';},false);
-  btn(W/2-195,422,110,38,t(lang,'music')+': '+(Audio.musicOn?t(lang,'on'):t(lang,'off')),()=>Audio.toggleMusic(),Audio.musicOn);
-  btn(W/2-77,422,110,38,t(lang,'sfx')+': '+(Audio.sfxOn?t(lang,'on'):t(lang,'off')),()=>Audio.toggleSfx(),Audio.sfxOn);
-  btn(W/2+41,422,154,38,t(lang,'gfx')+': '+(graphicsStyle==='pixel'?t(lang,'pixel'):t(lang,'classic')),toggleGraphicsStyle,graphicsStyle==='pixel');
+  btn(W/2-150,374,145,38,t(lang,'tournament'),()=>{mode='tournament';gotoSelect();},false);
+  btn(W/2+5,374,145,38,t(lang,'highScores'),enterHighscore,false);
+  btn(W/2-150,420,300,38,t(lang,'controls'),()=>{state='controls';},false);
+  btn(W/2-195,466,110,38,t(lang,'music')+': '+(Audio.musicOn?t(lang,'on'):t(lang,'off')),()=>Audio.toggleMusic(),Audio.musicOn);
+  btn(W/2-77,466,110,38,t(lang,'sfx')+': '+(Audio.sfxOn?t(lang,'on'):t(lang,'off')),()=>Audio.toggleSfx(),Audio.sfxOn);
+  btn(W/2+41,466,154,38,t(lang,'gfx')+': '+(graphicsStyle==='pixel'?t(lang,'pixel'):t(lang,'classic')),toggleGraphicsStyle,graphicsStyle==='pixel');
   drawLangPicker();
   buttons.forEach(drawBtn);
 }
@@ -831,13 +859,9 @@ function bg2(){ const grd=ctx.createRadialGradient(W/2,240,60,W/2,240,600); grd.
 function hairline(y){ ctx.strokeStyle='rgba(245,168,0,.5)'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(W/2-220,y); ctx.lineTo(W/2+220,y); ctx.stroke(); }
 
 // ---- create fighter ----
-const SPECIAL_TYPES=[   // reuses existing engine mechanics — a custom fighter needs no new code, just a type pick
-  {type:'combo',   key:'specialCombo'},
-  {type:'throw',   key:'specialThrow'},
-  {type:'lunge',   key:'specialLunge'},
-  {type:'spin',    key:'specialSpin'},
-  {type:'cleaver', key:'specialCleaver'},
-];
+// SPECIAL_TYPE_IDS (the valid type strings) comes from game-logic.js, shared with normalizeCharacter's
+// validation; only the i18n key (derived, 'special'+Type) is UI-specific and lives here.
+const SPECIAL_TYPES = SPECIAL_TYPE_IDS.map(type=>({ type, key:'special'+type[0].toUpperCase()+type.slice(1) }));
 function populateSpecialTypeOptions(){
   const sel=document.getElementById('cfSpecialType'), prev=sel.value;
   sel.innerHTML='';
@@ -848,6 +872,7 @@ function setTouchLabel(el,text){ el.textContent=text; el.style.fontSize=(text.le
 function applyLangToDom(){   // native inputs' placeholders aren't canvas-drawn, so re-set them on language change
   createUI.name.placeholder=t(lang,'fighterNamePlaceholder');
   createUI.specialName.placeholder=t(lang,'specialNamePlaceholder');
+  scoreNameEl.placeholder=t(lang,'fighterNamePlaceholder');
   populateSpecialTypeOptions();
   setTouchLabel($('tUp'),t(lang,'touchJump'));
   setTouchLabel($('tDown'),t(lang,'touchDuck'));
@@ -860,12 +885,12 @@ function applyLangToDom(){   // native inputs' placeholders aren't canvas-drawn,
 const $=id=>document.getElementById(id);
 const createUI={ name:$('cfName'), specialName:$('cfSpecialName'), skin:$('cfSkin'), hairColor:$('cfHairColor'), outfitColor:$('cfOutfitColor'),
   hp:$('cfHp'), speed:$('cfSpeed'), power:$('cfPower'), defense:$('cfDefense'), scale:$('cfScale'), girth:$('cfGirth'), specialType:$('cfSpecialType') };
+const scoreNameEl=$('scoreName');
 applyLangToDom();
 const SKIN_TONES=['#e8b98f','#e5b083','#e3ab7d','#f0c39c','#c98a5e','#a56b3f','#7a4a2b'];
 const HAIR_COLORS=['#2a2a2a','#3a2a1a','#4a3320','#b3401a','#5c4033','#1a1a1a','#8a6d3b'];
 const SPANDEX_COLORS=['#16bcbc','#c0392b','#8e44ad','#2980b9','#27ae60','#e67e22','#2c3e50'];
-const HAIR_ORDER=['short','braid','bald','punk','leia','headguard'];
-const BEARD_ORDER=['none','full','moustache','goatee','long'];
+// HAIR_ORDER/BEARD_ORDER come from game-logic.js (shared with normalizeCharacter's validation).
 const NAME_A=['Ken','Rai','Sho','Hana','Taka','Vik','Zan','Miko','Dai','Ryo','Kaze','Suzu','Bora','Iso'];
 const NAME_B=['ji','to','ra','mi','shi','ta','ko','n','zo','ki','ra','ma','shu'];
 const SPECIAL_NAMES=['Raiden Strike','Shadow Fang','Iron Wave','Crimson Fist','Silent Storm','Dragon Coil','Falcon Dive','Thunder Palm','Serpent Crush','Hollow Point'];
@@ -933,6 +958,37 @@ function placeEl(el,lx,ly,lw,lh){ const {r,sx,sy}=canvasScale();
   el.style.left=(r.left+lx*sx)+'px'; el.style.top=(r.top+ly*sy)+'px';
   el.style.width=(lw*sx)+'px'; el.style.height=(lh*sy)+'px'; }
 
+// ---- Cloudflare Turnstile: renders a one-shot widget in #turnstileHost, positioned over
+// whichever screen requested it (Create's Publish button, the tournament score-submit screen).
+// Resolves to null (never rejects) when Turnstile isn't configured or its script failed to
+// load (offline/blocked) — callers treat that as "can't do this write right now", not an error.
+function turnstileToken(lx,ly,lw,lh){
+  return new Promise(resolve=>{
+    const cfg = (typeof KEMPOKA_CONFIG!=='undefined') ? KEMPOKA_CONFIG : null;
+    const host = document.getElementById('turnstileHost');
+    if(!cfg || !cfg.TURNSTILE_SITE_KEY || typeof turnstile==='undefined'){ resolve(null); return; }
+    placeEl(host,lx,ly,lw,lh); host.innerHTML=''; host.classList.add('on');
+    const done=token=>{ host.classList.remove('on'); resolve(token||null); };
+    turnstile.render(host, { sitekey:cfg.TURNSTILE_SITE_KEY, callback:done, 'error-callback':()=>done(null), 'expired-callback':()=>done(null) });
+  });
+}
+
+// ---- Publishing: exactly one of your local fighters may occupy the shared/public slot.
+// The slot itself lives server-side (one row per anonymous account); this just remembers
+// locally which fighter you last published, so the Create screen can show its status.
+function publishedCharId(){ return localStorage.getItem('kmp_published_id'); }
+function setPublishedCharId(id){ if(id) localStorage.setItem('kmp_published_id', id); else localStorage.removeItem('kmp_published_id'); }
+let publishBusyId=null;
+async function togglePublish(c){
+  if(publishBusyId) return;
+  publishBusyId=c.id; Audio.sfx('click');
+  const alreadyPublished = publishedCharId()===c.id;
+  const token = await turnstileToken(W/2-150,240,300,66);
+  const ok = token && await (alreadyPublished ? SharedStore.unpublishCharacter(token) : SharedStore.publishCharacter(c, token));
+  if(ok) setPublishedCharId(alreadyPublished ? null : c.id);
+  publishBusyId=null;
+}
+
 function drawCreate(){
   buttons=[]; bg2(); readUIIntoDraft();
   ctx.fillStyle=GOLD; ctx.textAlign='center'; ctx.font='bold 28px "Trebuchet MS"'; ctx.fillText(t(lang,'createFighter'),W/2,38); hairline(52);
@@ -991,6 +1047,12 @@ function drawCreate(){
     const b=getBelt(c.beltRank); ctx.fillStyle=b?b.color:'#3a3a3a'; ctx.fillRect(220,y+3,30,10);
     btn(760,y-1,60,18,t(lang,'edit'),()=>editCustom(c),false);
     btn(826,y-1,30,18,'×',()=>deleteCustom(c.id),false);
+    // shared roster: publish exactly one local fighter to be selectable by other players.
+    // Hidden entirely when no backend is configured, so nothing changes for existing users.
+    if(SharedStore.isConfigured()){
+      const isMe=publishedCharId()===c.id, busy=publishBusyId===c.id;
+      btn(862,y-1,92,18, busy?'…':(isMe?t(lang,'published'):t(lang,'publish')), ()=>togglePublish(c), isMe);
+    }
   });
   if(customCharacters.length>shown.length){ ctx.fillStyle='#8a7d5c'; ctx.font='11px "Trebuchet MS"';
     ctx.fillText(t(lang,'moreFighters').replace('{n}',customCharacters.length-shown.length),60,492); }
@@ -1006,7 +1068,7 @@ function gotoSelect(){ state='select'; selPhase=0; sel=[0,0]; page=0; Audio.star
 const PER_PAGE=8, COLS=4;
 function drawSelect(){
   buttons=[]; bg2();
-  const title = selPhase===0 ? t(lang,'chooseYourFighter') : (mode==='1p' ? t(lang,'chooseCpuOpponent') : t(lang,'player2Choose'));
+  const title = (selPhase===0 || mode==='tournament') ? t(lang,'chooseYourFighter') : (mode==='1p' ? t(lang,'chooseCpuOpponent') : t(lang,'player2Choose'));
   ctx.fillStyle=GOLD; ctx.textAlign='center'; ctx.font='bold 30px "Trebuchet MS"'; ctx.fillText(title,W/2,58);
   hairline(74);
   const pages=Math.ceil(ROSTER.length/PER_PAGE);
@@ -1041,29 +1103,68 @@ function drawSelect(){
 function drawPortrait(c,cx,cy,scale){ const f={char:c,x:cx,y:cy,facing:1,vx:0,anim:0,cleaver:0,action:null,grab:null,down:0,stun:0,blocking:false,crouching:false,onGround:true};
   ctx.save(); ctx.translate(cx,cy); ctx.scale(scale,scale); ctx.translate(-cx,-cy); drawFighter(f); ctx.restore(); }
 function chooseFighter(idx){ Audio.sfx('click');
+  if(mode==='tournament'){ startTournament(idx); return; }
   if(selPhase===0){ sel[0]=idx; selPhase=1; page=0; } else { sel[1]=idx; startFight(); } }
 function pickRandomCpu(){ Audio.sfx('click'); sel[1]=Math.floor(Math.random()*ROSTER.length); startFight(); }
+
+// ---- tournament mode: beat every roster character in sequence, your own character last
+// (mirror final boss). One 120s round decides each match; a win banks the remaining seconds
+// and advances, a loss/draw ends the run. Score = beaten*100 + banked seconds. ----
+let tournament=null;   // {active, queue:[char,...], idx, beaten, timeBank, yourChar, lastWinSide}
+let tournamentResult=null;   // {score, beaten} — set once a run ends, read by the score-entry screen
+function startTournament(yourIdx){
+  const yourChar = ROSTER[yourIdx];
+  const queue = ROSTER.filter(c=>c!==yourChar).concat([yourChar]);
+  tournament = { active:true, queue, idx:0, beaten:0, timeBank:0, yourChar, lastWinSide:-1 };
+  startFight();
+}
+function advanceTournament(){
+  const youWon = tournament.lastWinSide===0;
+  Audio.sfx(youWon?'win':'ko');
+  if(!youWon){ finishTournament(); return; }
+  tournament.timeBank += Math.ceil(Math.max(0, roundTimer));
+  tournament.beaten++;
+  tournament.idx++;
+  if(tournament.idx>=tournament.queue.length){ finishTournament(); return; }
+  startFight();
+}
+function finishTournament(){
+  tournamentResult = { score: tournament.beaten*100 + tournament.timeBank, beaten: tournament.beaten };
+  scoreNameEl.value = (tournament.yourChar && tournament.yourChar.name) || '';
+  tournament.active = false;
+  state = 'scoreEntry';
+}
 
 // ---- fight ----
 function startFight(){ state='fight';
   stageIndex = matchCount % STAGES.length; matchCount++;   // next stage in sequence, one per fight
-  F[0]=makeFighter(ROSTER[sel[0]],0,W*0.32);
-  F[1]=makeFighter(ROSTER[sel[1]],1,W*0.68);
-  roundTimer=ROUND_TIME; matchOver=false; koFreeze=0; introTimer=2.0; Audio.startMusic(); Audio.sfx('bell');
+  const inTourney = tournament && tournament.active;
+  F[0]=makeFighter(inTourney ? tournament.yourChar : ROSTER[sel[0]], 0, W*0.32);
+  F[1]=makeFighter(inTourney ? tournament.queue[tournament.idx] : ROSTER[sel[1]], 1, W*0.68);
+  roundTimer = inTourney ? TOURNEY_ROUND_TIME : ROUND_TIME;
+  matchOver=false; koFreeze=0; introTimer=2.0; Audio.startMusic(); Audio.sfx('bell');
 }
 let introTimer=0;
 function newRound(){ const w=[F[0].wins,F[1].wins];
   F[0]=Object.assign(makeFighter(F[0].char,0,W*0.32),{wins:w[0]});
   F[1]=Object.assign(makeFighter(F[1].char,1,W*0.68),{wins:w[1]});
   roundTimer=ROUND_TIME; koFreeze=0; Audio.sfx('bell'); }
-function endRound(winSide){ koFreeze=1.4; if(winSide>=0){ F[winSide].wins++; }
+function endRound(winSide){ koFreeze=1.4;
+  if(tournament && tournament.active){ matchOver=true; tournament.lastWinSide=winSide; return; }
+  if(winSide>=0){ F[winSide].wins++; }
   if(F[0].wins>=WINS_NEEDED||F[1].wins>=WINS_NEEDED){ matchOver=true; winner=F[0].wins>F[1].wins?0:1; endTimer=0; }
 }
 function updateFight(){
-  if(koFreeze>0){ koFreeze-=DT; F.forEach(f=>{ f.anim+=DT; physics(f); }); if(koFreeze<=0){ if(matchOver){ state='result'; Audio.sfx('win'); } else newRound(); } return; }
+  if(koFreeze>0){ koFreeze-=DT; F.forEach(f=>{ f.anim+=DT; physics(f); });
+    if(koFreeze<=0){
+      if(matchOver){ if(tournament && tournament.active) advanceTournament(); else { state='result'; Audio.sfx('win'); } }
+      else newRound();
+    }
+    return;
+  }
   if(introTimer>0) introTimer-=DT;
   roundTimer-=DT;
-  const in0=readInput(0), in1 = (mode==='1p')?aiInput(F[1]):readInput(1);
+  const in0=readInput(0), in1 = (mode==='1p'||mode==='tournament')?aiInput(F[1]):readInput(1);
   updateFighter(F[0],in0); updateFighter(F[1],in1);
   F[0].hp=Math.max(0,F[0].hp); F[1].hp=Math.max(0,F[1].hp);
   if(F[0].hp<=0||F[1].hp<=0){ endClinch(); const w=F[0].hp<=0&&F[1].hp<=0?-1:(F[1].hp<=0?0:1); Audio.sfx('ko'); endRound(w); }
@@ -1076,6 +1177,8 @@ function drawFight(){
   drawHUD();
   if(introTimer>0){ ctx.globalAlpha=Math.min(1,introTimer); ctx.fillStyle=GOLD; ctx.font='italic bold 30px "Trebuchet MS"'; ctx.textAlign='center';
     ctx.fillText(t(lang,STAGE_NAME_KEYS[stageIndex]),W/2,150); ctx.globalAlpha=1; }
+  if(tournament && tournament.active){ ctx.fillStyle=GOLD; ctx.font='bold 13px "Trebuchet MS"'; ctx.textAlign='center';
+    ctx.fillText(t(lang,'tourneyProgress').replace('{n}',tournament.idx+1).replace('{m}',tournament.queue.length),W/2,116); }
   if(koFreeze>0){ ctx.fillStyle=GOLD; ctx.font='bold 60px "Trebuchet MS"'; ctx.textAlign='center';
     ctx.fillText(roundTimer<=0&&!(F[0].hp<=0||F[1].hp<=0)?t(lang,'time'):t(lang,'ko'),W/2,H/2); }
   // clinch prompt
@@ -1120,6 +1223,58 @@ function drawResult(){
   hairline(140);
 }
 
+// ---- tournament score entry & retro highscore list ----
+let submittingScore=false;
+async function submitTournamentScore(){
+  if(submittingScore) return;
+  submittingScore=true;
+  const name=(scoreNameEl.value||'').trim().slice(0,16) || 'Player';
+  const token = await turnstileToken(W/2-150,246,300,30);
+  if(token) await SharedStore.submitScore({ name, score:tournamentResult.score, beaten:tournamentResult.beaten }, token);
+  submittingScore=false;
+  enterHighscore();
+}
+function drawScoreEntry(){
+  buttons=[]; bg2();
+  ctx.fillStyle=GOLD; ctx.textAlign='center'; ctx.font='bold 32px "Trebuchet MS"'; ctx.fillText(t(lang,'newHighScore'),W/2,72); hairline(88);
+  ctx.font='bold 20px "Trebuchet MS"'; ctx.fillStyle='#d8c9a0';
+  ctx.fillText(t(lang,'tourneyBeaten').replace('{n}',tournamentResult.beaten),W/2,140);
+  ctx.fillStyle=GOLD; ctx.font='bold 26px "Trebuchet MS"'; ctx.fillText(t(lang,'tourneyScore').replace('{n}',tournamentResult.score),W/2,178);
+  if(SharedStore.isConfigured()){
+    ctx.fillStyle=GOLD; ctx.font='bold 13px "Trebuchet MS"'; ctx.fillText(t(lang,'nameFieldLabel'),W/2,224);
+    placeEl(scoreNameEl,W/2-150,230,300,30);
+    btn(W/2-150,286,300,46, submittingScore?'…':t(lang,'submitScore'), submitTournamentScore, false);
+    btn(W/2-150,342,300,38, t(lang,'skip'), enterHighscore, false);
+  } else {
+    btn(W/2-150,286,300,46, t(lang,'mainMenu'), ()=>{state='menu';}, false);
+  }
+  buttons.forEach(drawBtn);
+}
+
+let highscoreList=[], highscoreLoading=false;
+function enterHighscore(){ state='highscore'; highscoreLoading=true;
+  SharedStore.topScores(20).then(list=>{ highscoreList=list; highscoreLoading=false; }); }
+function drawHighscore(){
+  buttons=[]; bg2();
+  ctx.fillStyle=GOLD; ctx.textAlign='center'; ctx.font='bold 30px "Trebuchet MS"'; ctx.fillText(t(lang,'highScores'),W/2,58); hairline(74);
+  ctx.font='bold 13px "Trebuchet MS"'; ctx.fillStyle='#8a7d5c'; ctx.textAlign='left';
+  ctx.fillText(t(lang,'rankHeader'),W/2-260,94); ctx.fillText(t(lang,'nameFieldLabel'),W/2-190,94);
+  ctx.textAlign='right'; ctx.fillText(t(lang,'scoreHeader'),W/2+260,94);
+  hairline(102);
+  if(highscoreLoading || !highscoreList.length){
+    ctx.textAlign='center'; ctx.fillStyle='#8a7d5c'; ctx.font='14px "Trebuchet MS"';
+    ctx.fillText(highscoreLoading?'…':t(lang,'noScoresYet'),W/2,220);
+  } else {
+    highscoreList.forEach((s,i)=>{ const y=132+i*20;
+      ctx.fillStyle = i<3?GOLD:'#e6dcc0'; ctx.font='bold 14px "Trebuchet MS"';
+      ctx.textAlign='left'; ctx.fillText('#'+(i+1),W/2-260,y); ctx.fillText(s.name,W/2-190,y);
+      ctx.textAlign='right'; ctx.fillText(String(s.score),W/2+260,y);
+    });
+  }
+  btn(W/2-110,H-56,220,40,'‹ '+t(lang,'mainMenu'),()=>{state='menu';},false);
+  buttons.forEach(drawBtn);
+}
+
 // ---------- Loop -------------------------------------------------------------
 function handleClick(){ if(!clickPt) return; const p=clickPt; clickPt=null;
   if(state==='fight') return;
@@ -1133,9 +1288,12 @@ function loop(now){ DT=Math.min(0.05,(now-last)/1000); last=now;
   else if(state==='select') drawSelect();
   else if(state==='fight'){ updateFight(); drawFight(); }
   else if(state==='result') drawResult();
+  else if(state==='scoreEntry') drawScoreEntry();
+  else if(state==='highscore') drawHighscore();
   // on-screen pad: only where it's usable (a live fight) or being previewed on the controls screen
   document.getElementById('touch').classList.toggle('on', wantTouch() && (state==='fight'||state==='controls'));
   document.getElementById('createUI').classList.toggle('on', state==='create');
+  document.getElementById('scoreUI').classList.toggle('on', state==='scoreEntry' && SharedStore.isConfigured());
   document.getElementById('exitBtn').classList.toggle('show', state==='fight');
   requestAnimationFrame(loop);
 }
