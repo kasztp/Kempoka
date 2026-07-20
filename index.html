@@ -1064,7 +1064,13 @@ function drawCreate(){
 }
 
 // ---- character select ----
-function gotoSelect(){ state='select'; selPhase=0; sel=[0,0]; page=0; Audio.startMusic(); }
+function gotoSelect(){ state='select'; selPhase=0; sel=[0,0]; page=0; Audio.startMusic();
+  // re-pull the shared roster on every entry to select (1P, 2P, and Tournament all funnel
+  // through here before a fighter is picked) so other players' publishes since page-load —
+  // or since the last visit — show up without needing a full reload. Non-blocking: the grid
+  // just shows whatever ROSTER already has and updates in place once this resolves.
+  SharedStore.listCharacters().then(list=>{ sharedCharacters=list; refreshRoster(); });
+}
 const PER_PAGE=8, COLS=4;
 function drawSelect(){
   buttons=[]; bg2();
@@ -1178,7 +1184,7 @@ function drawFight(){
   if(introTimer>0){ ctx.globalAlpha=Math.min(1,introTimer); ctx.fillStyle=GOLD; ctx.font='italic bold 30px "Trebuchet MS"'; ctx.textAlign='center';
     ctx.fillText(t(lang,STAGE_NAME_KEYS[stageIndex]),W/2,150); ctx.globalAlpha=1; }
   if(tournament && tournament.active){ ctx.fillStyle=GOLD; ctx.font='bold 13px "Trebuchet MS"'; ctx.textAlign='center';
-    ctx.fillText(t(lang,'tourneyProgress').replace('{n}',tournament.idx+1).replace('{m}',tournament.queue.length),W/2,116); }
+    ctx.fillText(t(lang,'tourneyProgress').replace('{n}',tournament.idx+1).replace('{m}',tournament.queue.length),W/2,GROUND+32); }
   if(koFreeze>0){ ctx.fillStyle=GOLD; ctx.font='bold 60px "Trebuchet MS"'; ctx.textAlign='center';
     ctx.fillText(roundTimer<=0&&!(F[0].hp<=0||F[1].hp<=0)?t(lang,'time'):t(lang,'ko'),W/2,H/2); }
   // clinch prompt
