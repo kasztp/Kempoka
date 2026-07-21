@@ -38,15 +38,22 @@
   .cornerBtn:active { background:rgba(245,168,0,.35); }
   #fsBtn { right:8px; }
   #exitBtn { right:46px; font-size:17px; }
+  #qualityBtn { right:84px; font-size:15px; }
+  /* GFX:3D layers a WebGL canvas behind the 2D one; explicit z-index (not DOM order)
+     decides stacking, since an absolutely-positioned element paints after non-positioned
+     siblings by default regardless of where it sits in the markup. */
+  #cv3d { position:absolute; top:0; left:0; z-index:0; }
+  #cv { position:relative; z-index:1; }
   /* Cloudflare Turnstile mount point — shown only while a shared-backend write (publish a
      fighter, submit a tournament score) is in flight and needs a token; positioned per-screen
      via placeEl(), same mechanism as the .cfield inputs above. */
   #turnstileHost { position:fixed; pointer-events:auto; z-index:25; display:none; }
   #turnstileHost.on { display:block; }
 </style>
-<div id="wrap"><canvas id="cv" width="960" height="540"></canvas></div>
+<div id="wrap"><canvas id="cv3d"></canvas><canvas id="cv" width="960" height="540"></canvas></div>
 <div id="exitBtn" class="cornerBtn" title="Exit to Menu">⌂</div>
 <div id="fsBtn" class="cornerBtn" title="Fullscreen">⛶</div>
+<div id="qualityBtn" class="cornerBtn" title="Quality">⚡</div>
 <div id="touch">
   <div class="tbtn" id="tLeft" data-k="left">◀</div>
   <div class="tbtn" id="tRight" data-k="right">▶</div>
@@ -78,6 +85,7 @@
 <div id="turnstileHost"></div>
 <script src="config.js"></script>
 <script src="game-logic.js"></script>
+<script src="render3d.js"></script>
 <!-- Cloudflare Turnstile widget script — only used by the publish/score-entry screens (Part 3).
      Loaded async so a blocked/offline network never delays or breaks the page; if it fails to
      load, window.turnstile stays undefined and those screens simply disable shared writes. -->
@@ -89,7 +97,19 @@
 // classic script, so GOLD/KYU_RANKS/CHARACTERS/CharacterStore/MOVES/etc. are already globals here.
 // config.js (loaded first) defines window.KEMPOKA_CONFIG, consulted by SharedStore internally.
 const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const cv3d = document.getElementById('cv3d');
+init3D(cv3d);
 const W = 960, H = 540, GROUND = 476, INK = '#1a1a1a';
+
+// cv's backing store defaulted to exactly 960x540 physical pixels, CSS-stretched to fill
+// the viewport (object-fit:contain) — on a high-DPI display that's a big upscale with no
+// extra resolution to work with, reading as blurry. Sizing the backing store by
+// devicePixelRatio (capped at 2x, matching the cap already used for the 3D quality
+// preset in render3d.js) and scaling the context once here means every existing draw
+// call below keeps working in the same 960x540 logical coordinates, unchanged.
+const DPR = Math.min(window.devicePixelRatio||1, 2);
+cv.width = W*DPR; cv.height = H*DPR;
+ctx.scale(DPR, DPR);
 
 // `canvas{width:100%;height:100%;object-fit:contain}` means the element's box (from
 // getBoundingClientRect) is often bigger than the actual rendered 960x540 content whenever the
@@ -172,9 +192,17 @@ addEventListener('keydown',e=>{ if(isFormField(e)) return; if(KEYMAP[e.code]) e.
 addEventListener('keyup',e=>{ if(isFormField(e)) return; keys.delete(e.code); });
 const touch={};
 let touchMode = localStorage.kmp_touch || 'auto';   // 'auto' | 'on' | 'off'
-let graphicsStyle = localStorage.kmp_graphics || 'classic';   // 'classic' | 'pixel'
-function applyGraphicsStyle(){ cv.style.imageRendering = graphicsStyle==='pixel' ? 'pixelated' : 'auto'; }
-function toggleGraphicsStyle(){ graphicsStyle = graphicsStyle==='pixel'?'classic':'pixel'; localStorage.kmp_graphics=graphicsStyle; applyGraphicsStyle(); }
+let graphicsStyle = localStorage.kmp_graphics || 'classic';   // 'classic' | 'pixel' | '3d'
+if(graphicsStyle==='3d' && !has3DSupport()) graphicsStyle='classic';   // device can't do it — fall back silently
+function applyGraphicsStyle(){
+  cv.style.imageRendering = graphicsStyle==='pixel' ? 'pixelated' : 'auto';
+  cv.style.background = graphicsStyle==='3d' ? 'transparent' : '';
+}
+function toggleGraphicsStyle(){
+  const order = has3DSupport() ? ['classic','pixel','3d'] : ['classic','pixel'];
+  graphicsStyle = order[(order.indexOf(graphicsStyle)+1) % order.length];
+  localStorage.kmp_graphics=graphicsStyle; applyGraphicsStyle();
+}
 applyGraphicsStyle();
 
 // ---------- Language (menu-only setting, read live by every draw*() text call) --
@@ -438,7 +466,7 @@ function drawFighter(f){
     fHand=[0.42*h,-0.2*h]; bHand=[0.34*h,-0.24*h]; fFoot=[0.3*h,0]; bFoot=[-0.22*h,0]; }
   else if(pose==='clinch'||pose==='choke'){ fHand=[0.34*h,-0.7*h]; bHand=[0.28*h,-0.62*h]; hip[0]=0.03*h; }
 
-  (graphicsStyle==='pixel'?drawFighterPixel:drawFighterClassic)(f,h,c,pose,g,hip,sh,head,headR,fFoot,bFoot,fHand,bHand,fKnee);
+  (graphicsStyle==='3d'&&state==='fight' ? draw3DFighter : graphicsStyle==='pixel'?drawFighterPixel:drawFighterClassic)(f,h,c,pose,g,hip,sh,head,headR,fFoot,bFoot,fHand,bHand,fKnee);
   ctx.restore();
 }
 function drawFighterClassic(f,h,c,pose,g,hip,sh,head,headR,fFoot,bFoot,fHand,bHand,fKnee){
@@ -483,12 +511,19 @@ function drawFighterClassic(f,h,c,pose,g,hip,sh,head,headR,fFoot,bFoot,fHand,bHa
   // hair
   ctx.fillStyle=c.hair.color;
   if(c.hair.style==='braid'){ ctx.beginPath(); ctx.arc(head[0],head[1]-headR*0.3,headR,Math.PI,0); ctx.fill();
-    ctx.lineWidth=6; ctx.strokeStyle=c.hair.color; ctx.beginPath(); ctx.moveTo(head[0]-headR*0.8,head[1]); ctx.quadraticCurveTo(head[0]-headR*2,head[1]+headR,head[0]-headR*1.4,head[1]+headR*2.4); ctx.stroke(); }
-  else if(c.hair.style==='punk'){ ctx.beginPath();
-    for(let i=-2;i<=2;i++){ const sx=head[0]+i*headR*0.35, spikeH=headR*(1.3-Math.abs(i)*0.15);
-      ctx.moveTo(sx-headR*0.12,head[1]-headR*0.15); ctx.lineTo(sx,head[1]-headR*0.15-spikeH); ctx.lineTo(sx+headR*0.12,head[1]-headR*0.15); }
-    ctx.closePath(); ctx.fill(); }
-  else if(c.hair.style==='leia'){ [-1,1].forEach(side=>{ ctx.beginPath(); ctx.arc(head[0]+side*headR*0.9,head[1]-headR*0.05,headR*0.45,0,7); ctx.fill(); });
+    // strand starts at the cap's own bottom edge (y=head[1]-headR*0.3, same as the cap arc's
+    // flat close-out line), not the bare head — it now visibly grows out of the hair, not the skin
+    ctx.lineWidth=6; ctx.strokeStyle=c.hair.color; ctx.beginPath(); ctx.moveTo(head[0]-headR*0.8,head[1]-headR*0.3); ctx.quadraticCurveTo(head[0]-headR*2,head[1]+headR,head[0]-headR*1.4,head[1]+headR*2.4); ctx.stroke(); }
+  else if(c.hair.style==='punk'){
+    // fan of spikes from one anchor at the top of the skull, not spread across the face —
+    // reads as a mohawk ridge in profile instead of bangs
+    const bx=head[0], by=head[1]-headR*0.82;
+    for(let i=-2;i<=2;i++){ const ang=i*0.36, spikeLen=headR*(0.75-Math.abs(i)*0.08);
+      const dx=Math.sin(ang), dy=-Math.cos(ang), px=-dy, py=dx, w=headR*0.12;
+      const tipX=bx+dx*spikeLen, tipY=by+dy*spikeLen;
+      ctx.beginPath(); ctx.moveTo(bx-px*w,by-py*w); ctx.lineTo(tipX,tipY); ctx.lineTo(bx+px*w,by+py*w); ctx.closePath(); ctx.fill(); }
+  }
+  else if(c.hair.style==='leia'){ [-1,1].forEach(side=>{ ctx.beginPath(); ctx.arc(head[0]+side*headR*0.9,head[1]-headR*0.05,headR*0.6,0,7); ctx.fill(); });
     ctx.beginPath(); ctx.arc(head[0],head[1]-headR*0.25,headR*0.7,Math.PI,0); ctx.fill(); }
   else if(c.hair.style==='headguard'){ ctx.beginPath(); ctx.arc(head[0],head[1]-headR*0.15,headR*1.08,Math.PI,0); ctx.fill();
     [-1,1].forEach(side=>{ ctx.beginPath(); ctx.arc(head[0]+side*headR*0.95,head[1]+headR*0.05,headR*0.4,0,7); ctx.fill(); });
@@ -501,7 +536,29 @@ function drawFighterClassic(f,h,c,pose,g,hip,sh,head,headR,fFoot,bFoot,fHand,bHa
   else if(bStyle==='goatee'){ ctx.fillStyle=c.hair.color; ctx.fillRect(head[0]-headR*0.5,head[1]+headR*0.26,headR,headR*0.2);
     ctx.beginPath(); ctx.arc(head[0],head[1]+headR*0.62,headR*0.4,0,Math.PI); ctx.fill(); }
   else if(bStyle==='long'){ ctx.fillStyle='#c9c9c9'; ctx.fillRect(head[0]-headR*0.55,head[1]+headR*0.28,headR*1.1,headR*0.2);
-    ctx.beginPath(); ctx.moveTo(head[0]-headR*0.7,head[1]+headR*0.4); ctx.quadraticCurveTo(head[0],head[1]+headR*2.6,head[0]+headR*0.7,head[1]+headR*0.4); ctx.closePath(); ctx.fill(); }
+    // old-master beard reaches further down (was headR*2.6) for a properly long look
+    ctx.beginPath(); ctx.moveTo(head[0]-headR*0.7,head[1]+headR*0.4); ctx.quadraticCurveTo(head[0],head[1]+headR*3.4,head[0]+headR*0.7,head[1]+headR*0.4); ctx.closePath(); ctx.fill(); }
+  // glasses (independent of hair/beard — a character can have any combination)
+  const glassesType = c.glasses || 'none';
+  if(glassesType==='monocle'){
+    ctx.fillStyle='rgba(80,40,70,.55)'; ctx.beginPath(); ctx.ellipse(head[0]-headR*0.42,head[1]-headR*0.05,headR*0.32,headR*0.24,0,0,7); ctx.fill();
+  } else if(glassesType!=='none'){
+    const ey=head[1]-headR*0.05, lx=head[0]-headR*0.42, rx=head[0]+headR*0.42, lw=headR*0.32, lh=headR*0.24;
+    if(glassesType==='potter'){
+      ctx.strokeStyle='#1a1a1a'; ctx.lineWidth=2.5;
+      [lx,rx].forEach(cx=>{ ctx.beginPath(); ctx.arc(cx,ey,lw*0.75,0,7); ctx.stroke(); });
+      ctx.beginPath(); ctx.moveTo(lx+lw*0.75,ey); ctx.lineTo(rx-lw*0.75,ey); ctx.stroke();
+    } else {
+      const tint = glassesType==='sensei' ? 'rgba(230,140,40,.7)' : {black:'rgba(20,20,20,.75)',brown:'rgba(90,55,30,.75)',pink:'rgba(230,140,170,.65)'}[c.glassesTint||'black'];
+      ctx.fillStyle=tint;
+      ctx.beginPath(); ctx.ellipse(lx,ey,lw,lh,0,0,7); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(rx,ey,lw,lh,0,0,7); ctx.fill();
+      ctx.strokeStyle='#1a1a1a'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.ellipse(lx,ey,lw,lh,0,0,7); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(rx,ey,lw,lh,0,0,7); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(lx+lw,ey); ctx.lineTo(rx-lw,ey); ctx.stroke();
+    }
+  }
 }
 function beardStyle(c){ if(c.beard===true) return 'full'; if(!c.beard) return 'none'; return c.beard; }
 // Reusable low-res offscreen buffer: fighters draw into this at reduced native resolution, then
@@ -551,15 +608,20 @@ function drawFighterPixel(f,h,c,pose,g,hip,sh,head,headR,fFoot,bFoot,fHand,bHand
   // hair
   if(c.hair.style==='braid'){
     drawBlockyCircleFlat(head[0],head[1]-headR*0.3,headR,c.hair.color,-headR,0,bctx);
-    const p0=[head[0]-headR*0.8,head[1]], p1=[head[0]-headR*1.6,head[1]+headR*1.1], p2=[head[0]-headR*1.4,head[1]+headR*2.4];
+    // strand starts at the cap's bottom edge (head[1]-headR*0.3), not the bare head
+    const p0=[head[0]-headR*0.8,head[1]-headR*0.3], p1=[head[0]-headR*1.6,head[1]+headR*1.1], p2=[head[0]-headR*1.4,head[1]+headR*2.4];
     drawBlockyLimb(p0,p1,6,c.hair.color,bctx); drawBlockyLimb(p1,p2,5,c.hair.color,bctx);
   } else if(c.hair.style==='punk'){
+    // fan of spikes from one anchor at the top of the skull (matches drawFighterClassic)
     bctx.fillStyle=c.hair.color;
-    for(let i=-2;i<=2;i++){ const sx=head[0]+i*headR*0.35, spikeH=headR*(1.3-Math.abs(i)*0.15);
-      bctx.beginPath(); bctx.moveTo(snap(sx-headR*0.12),snap(head[1]-headR*0.15)); bctx.lineTo(snap(sx),snap(head[1]-headR*0.15-spikeH)); bctx.lineTo(snap(sx+headR*0.12),snap(head[1]-headR*0.15)); bctx.closePath(); bctx.fill(); }
+    const bx=head[0], by=head[1]-headR*0.82;
+    for(let i=-2;i<=2;i++){ const ang=i*0.36, spikeLen=headR*(0.75-Math.abs(i)*0.08);
+      const dx=Math.sin(ang), dy=-Math.cos(ang), px=-dy, py=dx, w=headR*0.12;
+      const tipX=bx+dx*spikeLen, tipY=by+dy*spikeLen;
+      bctx.beginPath(); bctx.moveTo(snap(bx-px*w),snap(by-py*w)); bctx.lineTo(snap(tipX),snap(tipY)); bctx.lineTo(snap(bx+px*w),snap(by+py*w)); bctx.closePath(); bctx.fill(); }
   } else if(c.hair.style==='leia'){
-    drawBlockyCircleFlat(head[0]-headR*0.9,head[1]-headR*0.05,headR*0.45,c.hair.color,-headR*0.45,headR*0.45,bctx);
-    drawBlockyCircleFlat(head[0]+headR*0.9,head[1]-headR*0.05,headR*0.45,c.hair.color,-headR*0.45,headR*0.45,bctx);
+    drawBlockyCircleFlat(head[0]-headR*0.9,head[1]-headR*0.05,headR*0.6,c.hair.color,-headR*0.6,headR*0.6,bctx);
+    drawBlockyCircleFlat(head[0]+headR*0.9,head[1]-headR*0.05,headR*0.6,c.hair.color,-headR*0.6,headR*0.6,bctx);
     drawBlockyCircleFlat(head[0],head[1]-headR*0.25,headR*0.7,c.hair.color,-headR*0.7,0,bctx);
   } else if(c.hair.style==='headguard'){
     drawBlockyCircleFlat(head[0],head[1]-headR*0.15,headR*1.08,c.hair.color,-headR*1.08,0,bctx);
@@ -575,7 +637,24 @@ function drawFighterPixel(f,h,c,pose,g,hip,sh,head,headR,fFoot,bFoot,fHand,bHand
   else if(bStyle==='goatee'){ bctx.fillStyle=c.hair.color; bctx.fillRect(snap(head[0]-headR*0.5),snap(head[1]+headR*0.26),snap(headR),snap(headR*0.2));
     drawBlockyCircleFlat(head[0],head[1]+headR*0.62,headR*0.4,c.hair.color,0,headR*0.4,bctx); }
   else if(bStyle==='long'){ bctx.fillStyle='#c9c9c9'; bctx.fillRect(snap(head[0]-headR*0.55),snap(head[1]+headR*0.28),snap(headR*1.1),snap(headR*0.2));
-    bctx.beginPath(); bctx.moveTo(snap(head[0]-headR*0.7),snap(head[1]+headR*0.4)); bctx.quadraticCurveTo(snap(head[0]),snap(head[1]+headR*2.6),snap(head[0]+headR*0.7),snap(head[1]+headR*0.4)); bctx.closePath(); bctx.fill(); }
+    // old-master beard reaches further down (was headR*2.6)
+    bctx.beginPath(); bctx.moveTo(snap(head[0]-headR*0.7),snap(head[1]+headR*0.4)); bctx.quadraticCurveTo(snap(head[0]),snap(head[1]+headR*3.4),snap(head[0]+headR*0.7),snap(head[1]+headR*0.4)); bctx.closePath(); bctx.fill(); }
+  // glasses (same shapes as Classic, drawn through the blocky toolkit)
+  const glassesType = c.glasses || 'none';
+  if(glassesType==='monocle'){
+    drawBlockyCircleFlat(head[0]-headR*0.42, head[1]-headR*0.05, headR*0.3, 'rgba(80,40,70,.6)', -headR*0.3, headR*0.3, bctx);
+  } else if(glassesType!=='none'){
+    const ey=head[1]-headR*0.05, lx=head[0]-headR*0.42, rx=head[0]+headR*0.42, lr=headR*0.28;
+    if(glassesType==='potter'){
+      bctx.strokeStyle='#1a1a1a'; bctx.lineWidth=2.5; bctx.lineCap='butt';
+      [lx,rx].forEach(cx=>{ bctx.beginPath(); bctx.arc(snap(cx),snap(ey),lr,0,7); bctx.stroke(); });
+      bctx.beginPath(); bctx.moveTo(snap(lx+lr),snap(ey)); bctx.lineTo(snap(rx-lr),snap(ey)); bctx.stroke();
+    } else {
+      const tint = glassesType==='sensei' ? 'rgba(230,140,40,.7)' : {black:'rgba(20,20,20,.75)',brown:'rgba(90,55,30,.75)',pink:'rgba(230,140,170,.65)'}[c.glassesTint||'black'];
+      drawBlockyCircleFlat(lx,ey,lr,tint,-lr,lr,bctx); drawBlockyCircleFlat(rx,ey,lr,tint,-lr,lr,bctx);
+      drawBlockyLimb([lx+lr,ey],[rx-lr,ey],3,'#1a1a1a',bctx);
+    }
+  }
   // composite: the main ctx already has ctx.translate(f.x,f.y)+ctx.scale(f.facing,1) applied by the
   // caller, so drawing the buffer centered at local (0,0) inherits the correct position AND mirror.
   const smoothed=ctx.imageSmoothingEnabled; ctx.imageSmoothingEnabled=false;
@@ -785,9 +864,13 @@ function stageArenaPixel(){ const t=now();
 }
 const STAGES_PIXEL=[stageDojoPixel, stageRooftopPixel, stageBambooPixel, stageArenaPixel];
 
-function bg(){ ctx.fillStyle=INK; ctx.fillRect(0,0,W,H);
-  const set = graphicsStyle==='pixel' ? STAGES_PIXEL : STAGES;
-  set[stageIndex % set.length]();
+function bg(){
+  if(graphicsStyle==='3d'){ ctx.clearRect(0,0,W,H); begin3DFrame(stageIndex, now()); }
+  else{
+    ctx.fillStyle=INK; ctx.fillRect(0,0,W,H);
+    const set = graphicsStyle==='pixel' ? STAGES_PIXEL : STAGES;
+    set[stageIndex % set.length]();
+  }
   ctx.strokeStyle='rgba(245,168,0,.20)'; ctx.lineWidth=2; ctx.strokeRect(30,GROUND+6,W-60,H-GROUND-14);
   drawWatermark(W-70,H-58,44,0.10);
 }
@@ -820,7 +903,7 @@ function drawMenu(){
   btn(W/2-150,420,300,38,t(lang,'controls'),()=>{state='controls';},false);
   btn(W/2-195,466,110,38,t(lang,'music')+': '+(Audio.musicOn?t(lang,'on'):t(lang,'off')),()=>Audio.toggleMusic(),Audio.musicOn);
   btn(W/2-77,466,110,38,t(lang,'sfx')+': '+(Audio.sfxOn?t(lang,'on'):t(lang,'off')),()=>Audio.toggleSfx(),Audio.sfxOn);
-  btn(W/2+41,466,154,38,t(lang,'gfx')+': '+(graphicsStyle==='pixel'?t(lang,'pixel'):t(lang,'classic')),toggleGraphicsStyle,graphicsStyle==='pixel');
+  btn(W/2+41,466,154,38,t(lang,'gfx')+': '+(graphicsStyle==='pixel'?t(lang,'pixel'):graphicsStyle==='3d'?t(lang,'3d'):t(lang,'classic')),toggleGraphicsStyle,graphicsStyle!=='classic');
   drawLangPicker();
   buttons.forEach(drawBtn);
 }
@@ -903,6 +986,7 @@ function newDraft(){ return {
   name:'', beltRank:'kyu12', outfit:'gi',
   build:{scale:1.0,girth:1.0}, skin:SKIN_TONES[0], hair:{color:HAIR_COLORS[0],style:'short'}, beard:false,
   gi:SPANDEX_COLORS[0],
+  glasses:'none', glassesTint:'black',
   stats:{maxHp:100,speed:1.0,power:1.0,defense:1.0},
   special:{name:'Special',type:'combo'},
   custom:true,
@@ -929,6 +1013,8 @@ function randomizeDraft(){
   draft.build.girth=+(0.8+Math.random()*0.65).toFixed(2);
   draft.skin=pick(SKIN_TONES); draft.hair.color=pick(HAIR_COLORS); draft.hair.style=pick(HAIR_ORDER);
   draft.beard=Math.random()<0.55?'none':pick(['full','moustache','goatee','long']);
+  draft.glasses=Math.random()<0.6?'none':pick(['sensei','dark','potter','monocle']);
+  draft.glassesTint=pick(TINT_ORDER);
   draft.gi=pick(SPANDEX_COLORS);
   draft.stats.maxHp=Math.round(84+Math.random()*52);
   draft.stats.speed=+(0.85+Math.random()*0.45).toFixed(2);
@@ -1020,6 +1106,15 @@ function drawCreate(){
   btn(60,214,110,30,draft.outfit==='gi'?t(lang,'gi'):t(lang,'spandex'),()=>{ draft.outfit=draft.outfit==='gi'?'spandex':'gi'; },false);
   btn(180,214,86,30,t(lang,HAIR_LABELS[draft.hair.style]),()=>{ draft.hair.style=HAIR_ORDER[(HAIR_ORDER.indexOf(draft.hair.style)+1)%HAIR_ORDER.length]; },false);
   btn(276,214,84,30,t(lang,BEARD_LABELS[beardStyle(draft)]),()=>{ draft.beard=BEARD_ORDER[(BEARD_ORDER.indexOf(beardStyle(draft))+1)%BEARD_ORDER.length]; },beardStyle(draft)!=='none');
+  const GLASSES_LABELS={none:'glassesNone',sensei:'glassesSensei',dark:'glassesDark',potter:'glassesPotter',monocle:'glassesMonocle'};
+  const TINT_LABELS={black:'tintBlack',brown:'tintBrown',pink:'tintPink'};
+  ctx.fillStyle='#8a7d5c'; ctx.font='11px "Trebuchet MS"';
+  ctx.fillText(t(lang,'glassesCaption'),60,320);
+  if(draft.glasses==='dark') ctx.fillText(t(lang,'tintCaption'),180,320);
+  btn(60,326,110,30,t(lang,GLASSES_LABELS[draft.glasses||'none']),()=>{ draft.glasses=GLASSES_ORDER[(GLASSES_ORDER.indexOf(draft.glasses||'none')+1)%GLASSES_ORDER.length]; },draft.glasses&&draft.glasses!=='none');
+  if(draft.glasses==='dark'){
+    btn(180,326,110,30,t(lang,TINT_LABELS[draft.glassesTint||'black']),()=>{ draft.glassesTint=TINT_ORDER[(TINT_ORDER.indexOf(draft.glassesTint||'black')+1)%TINT_ORDER.length]; },false);
+  }
   ctx.fillStyle=GOLD; ctx.font='bold 12px "Trebuchet MS"';
   ctx.fillText(t(lang,'skin'),60,266); placeEl(createUI.skin,60,274,50,30);
   ctx.fillText(t(lang,'hair'),124,266); placeEl(createUI.hairColor,124,274,50,30);
@@ -1310,9 +1405,16 @@ function loop(now){ DT=Math.min(0.05,(now-last)/1000); last=now;
   document.getElementById('createUI').classList.toggle('on', state==='create');
   document.getElementById('scoreUI').classList.toggle('on', state==='scoreEntry' && SharedStore.isConfigured());
   document.getElementById('exitBtn').classList.toggle('show', state==='fight');
+  document.getElementById('qualityBtn').classList.toggle('show', state==='fight' && graphicsStyle==='3d');
   requestAnimationFrame(loop);
 }
 document.getElementById('exitBtn').addEventListener('pointerdown', e=>{ e.preventDefault(); state='menu'; });
+(function initQualityBtn(){
+  const btn = document.getElementById('qualityBtn');
+  function updateIcon(){ const q=getQuality3D(); btn.textContent = q==='performance' ? '⚡' : '✨'; btn.title = q==='performance' ? 'Performance' : 'Eye Candy'; }
+  btn.addEventListener('pointerdown', e=>{ e.preventDefault(); setQuality3D(getQuality3D()==='performance'?'eyecandy':'performance'); updateIcon(); });
+  updateIcon();
+})();
 // ---------- Fullscreen toggle (persistent button, independent of game state) --
 // ponytail: element Fullscreen isn't supported on iPhone Safari (iPadOS/desktop/Android are fine)
 // — feature-detect and just hide the button there rather than show a control that silently no-ops.
@@ -1349,9 +1451,12 @@ function runSelfCheck(){
            && moveDir(a,b,{right:true})==='toward' && moveDir(a,b,{left:true})==='back' && moveDir(a,b,{})==='neutral';
   const ok6 = KICKS.up.name==='Head kick' && PUNCHES.up.launch<0;   // tables wired
   const ok7 = ROSTER.length>=CHARACTERS.length && ROSTER[0]===CHARACTERS[0];   // roster combiner sane
-  const pass=ok1&&ok2&&ok3&&ok4&&ok5&&ok6&&ok7;
+  const ok8 = has3DSupport()===true && STAGES_3D.length===4
+    && Number.isFinite(JOINT_DEPTH.hip) && Number.isFinite(JOINT_DEPTH.fFoot) && Number.isFinite(JOINT_DEPTH.fHand);
+  const pass=ok1&&ok2&&ok3&&ok4&&ok5&&ok6&&ok7&&ok8;
   console.assert(ok1,'block should reduce damage'); console.assert(ok2,'rect overlap'); console.assert(ok3,'grab fails at range'); console.assert(ok4,'grab works in range');
   console.assert(ok5,'moveDir maps directions'); console.assert(ok6,'move tables wired'); console.assert(ok7,'ROSTER combines CHARACTERS + custom');
+  console.assert(ok8,'GFX:3D initialized: WebGL support detected, 4 stages wired, joint depths finite');
   const el=document.createElement('div'); el.style.cssText='position:fixed;top:8px;left:8px;z-index:99;font:bold 16px monospace;padding:8px 12px;border-radius:6px;color:#000;background:'+(pass?'#3c3':'#f44');
   el.textContent='SELF-CHECK '+(pass?'PASS':'FAIL'); document.body.appendChild(el);
   // async: verify the CharacterStore round-trips (save -> list -> remove), the actual persistence contract

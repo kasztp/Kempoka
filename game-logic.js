@@ -39,7 +39,8 @@ function beltLabel(id){ const b=getBelt(id); return b?b.label:'No Belt'; }
 // special needs a matching case in doSpecial(); reusing a type below needs no code.
 const CHARACTERS = [
   { id:'rob', name:'Sensei Rob', beltRank:'dan1', outfit:'gi',
-    build:{scale:1.02,girth:1.0}, skin:'#e8b98f', hair:{color:'#3a2a1a',style:'short'}, beard:false,
+    build:{scale:1.02,girth:1.0}, skin:'#e8b98f', hair:{color:'#8a6d4a',style:'short'}, beard:false,
+    glasses:'sensei',
     stats:{maxHp:110,speed:1.05,power:1.05,defense:1.08},
     special:{name:'Renraku', type:'combo'} },
   { id:'zsolti', name:'Zsolti', beltRank:'kyu3', outfit:'gi',
@@ -66,6 +67,8 @@ const CHARACTERS = [
 // (index.html + a third hardcoded in game-logic.test.js) before the shared-roster work.
 const HAIR_ORDER = ['short','braid','bald','punk','leia','headguard'];
 const BEARD_ORDER = ['none','full','moustache','goatee','long'];
+const GLASSES_ORDER = ['none','sensei','dark','potter','monocle'];
+const TINT_ORDER = ['black','brown','pink'];
 const SPECIAL_TYPE_IDS = ['combo','throw','lunge','spin','cleaver'];
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{3,8}$/;
 
@@ -92,6 +95,8 @@ function normalizeCharacter(raw){
     skin: hex(raw.skin, '#e8b98f'),
     hair: { color: hex(raw_hair.color, '#2a2a2a'), style: HAIR_ORDER.includes(raw_hair.style) ? raw_hair.style : 'short' },
     beard: raw.beard===true || BEARD_ORDER.includes(raw.beard) ? raw.beard : false,
+    glasses: GLASSES_ORDER.includes(raw.glasses) ? raw.glasses : 'none',
+    glassesTint: TINT_ORDER.includes(raw.glassesTint) ? raw.glassesTint : 'black',
     stats: {
       maxHp: num(raw_stats.maxHp,80,140,100),
       speed: num(raw_stats.speed,0.8,1.35,1.0),
@@ -302,6 +307,7 @@ const I18N = {
   gfx:{en:'GFX',de:'GFX',es:'GFX',it:'GFX',fr:'GFX',hu:'GFX'},
   classic:{en:'CLASSIC',de:'KLASSISCH',es:'CLÁSICO',it:'CLASSICO',fr:'CLASSIQUE',hu:'KLASSZIKUS'},
   pixel:{en:'PIXEL',de:'PIXEL',es:'PÍXEL',it:'PIXEL',fr:'PIXEL',hu:'PIXEL'},
+  '3d':{en:'3D',de:'3D',es:'3D',it:'3D',fr:'3D',hu:'3D'},
   on:{en:'ON',de:'AN',es:'SÍ',it:'SÌ',fr:'OUI',hu:'BE'},
   off:{en:'OFF',de:'AUS',es:'NO',it:'NO',fr:'NON',hu:'KI'},
   auto:{en:'AUTO',de:'AUTO',es:'AUTO',it:'AUTO',fr:'AUTO',hu:'AUTO'},
@@ -356,6 +362,16 @@ const I18N = {
   beardMoustache:{en:'MOUSTACHE',de:'SCHNURRBART',es:'BIGOTE',it:'BAFFI',fr:'MOUSTACHE',hu:'BAJUSZ'},
   beardGoatee:{en:'GOATEE',de:'KINNBART',es:'PERILLA',it:'PIZZETTO',fr:'BOUC',hu:'KECSKESZAKÁLL'},
   beardLong:{en:'OLD MASTER',de:'ALTER MEISTER',es:'VIEJO MAESTRO',it:'VECCHIO MAESTRO',fr:'VIEUX MAÎTRE',hu:'ÖREG MESTER'},
+  glassesCaption:{en:'GLASSES',de:'BRILLE',es:'GAFAS',it:'OCCHIALI',fr:'LUNETTES',hu:'SZEMÜVEG'},
+  tintCaption:{en:'TINT',de:'TÖNUNG',es:'TONO',it:'TONALITÀ',fr:'TEINTE',hu:'SZÍNEZET'},
+  glassesNone:{en:'NONE',de:'KEIN',es:'NINGUNAS',it:'NESSUNI',fr:'AUCUNES',hu:'NINCS'},
+  glassesSensei:{en:"SENSEI'S SHADES",de:'SENSEI-BRILLE',es:'GAFAS DEL SENSEI',it:'OCCHIALI DEL SENSEI',fr:'LUNETTES DU SENSEI',hu:'SZENSZEI NAPSZEMÜVEGE'},
+  glassesDark:{en:'DARK SHADES',de:'DUNKLE BRILLE',es:'GAFAS OSCURAS',it:'OCCHIALI SCURI',fr:'LUNETTES FONCÉES',hu:'SÖTÉT SZEMÜVEG'},
+  glassesPotter:{en:'ROUND GLASSES',de:'RUNDE BRILLE',es:'GAFAS REDONDAS',it:'OCCHIALI TONDI',fr:'LUNETTES RONDES',hu:'KEREK SZEMÜVEG'},
+  glassesMonocle:{en:'MONOCLE',de:'MONOKEL',es:'MONÓCULO',it:'MONOCOLO',fr:'MONOCLE',hu:'MONOKLI'},
+  tintBlack:{en:'BLACK',de:'SCHWARZ',es:'NEGRO',it:'NERO',fr:'NOIR',hu:'FEKETE'},
+  tintBrown:{en:'BROWN',de:'BRAUN',es:'MARRÓN',it:'MARRONE',fr:'MARRON',hu:'BARNA'},
+  tintPink:{en:'PINK',de:'PINK',es:'ROSA',it:'ROSA',fr:'ROSE',hu:'RÓZSASZÍN'},
   skin:{en:'SKIN',de:'HAUT',es:'PIEL',it:'PELLE',fr:'PEAU',hu:'BŐR'},
   hair:{en:'HAIR',de:'HAAR',es:'PELO',it:'CAPELLI',fr:'CHEVEUX',hu:'HAJ'},
   outfitColor:{en:'OUTFIT COLOR',de:'OUTFIT-FARBE',es:'COLOR DEL ATUENDO',it:'COLORE ABITO',fr:'COULEUR DE LA TENUE',hu:'RUHA SZÍNE'},
@@ -453,7 +469,7 @@ function detectDefaultLang(languages){
 const exportsObj = {
   GOLD, KYU_RANKS, DAN_RANKS, BELT_TABLE, getBelt, giAboveBlue, GI_BLACK, GI_WHITE, BELT_CHOICES, beltLabel,
   CHARACTERS, CharacterStore, SharedStore,
-  HAIR_ORDER, BEARD_ORDER, SPECIAL_TYPE_IDS, normalizeCharacter,
+  HAIR_ORDER, BEARD_ORDER, GLASSES_ORDER, TINT_ORDER, SPECIAL_TYPE_IDS, normalizeCharacter,
   MOVES, PUNCHES, KICKS, GRAV, JUMP_V, CLINCH_RANGE, CLINCH_WINDOW, REVERSAL_WINDOW, ROUND_TIME, WINS_NEEDED, TOURNEY_ROUND_TIME,
   computeDamage, fh, bodyRect, rectsOverlap, inClinchRange, faceDir, moveDir,
   SUPPORTED_LANGS, I18N, t, detectDefaultLang,
