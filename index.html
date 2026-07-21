@@ -38,6 +38,7 @@
   .cornerBtn:active { background:rgba(245,168,0,.35); }
   #fsBtn { right:8px; }
   #exitBtn { right:46px; font-size:17px; }
+  #qualityBtn { right:84px; font-size:15px; }
   /* GFX:3D layers a WebGL canvas behind the 2D one; explicit z-index (not DOM order)
      decides stacking, since an absolutely-positioned element paints after non-positioned
      siblings by default regardless of where it sits in the markup. */
@@ -52,6 +53,7 @@
 <div id="wrap"><canvas id="cv3d"></canvas><canvas id="cv" width="960" height="540"></canvas></div>
 <div id="exitBtn" class="cornerBtn" title="Exit to Menu">⌂</div>
 <div id="fsBtn" class="cornerBtn" title="Fullscreen">⛶</div>
+<div id="qualityBtn" class="cornerBtn" title="Quality">⚡</div>
 <div id="touch">
   <div class="tbtn" id="tLeft" data-k="left">◀</div>
   <div class="tbtn" id="tRight" data-k="right">▶</div>
@@ -1327,9 +1329,16 @@ function loop(now){ DT=Math.min(0.05,(now-last)/1000); last=now;
   document.getElementById('createUI').classList.toggle('on', state==='create');
   document.getElementById('scoreUI').classList.toggle('on', state==='scoreEntry' && SharedStore.isConfigured());
   document.getElementById('exitBtn').classList.toggle('show', state==='fight');
+  document.getElementById('qualityBtn').classList.toggle('show', state==='fight' && graphicsStyle==='3d');
   requestAnimationFrame(loop);
 }
 document.getElementById('exitBtn').addEventListener('pointerdown', e=>{ e.preventDefault(); state='menu'; });
+(function initQualityBtn(){
+  const btn = document.getElementById('qualityBtn');
+  function updateIcon(){ const q=getQuality3D(); btn.textContent = q==='performance' ? '⚡' : '✨'; btn.title = q==='performance' ? 'Performance' : 'Eye Candy'; }
+  btn.addEventListener('pointerdown', e=>{ e.preventDefault(); setQuality3D(getQuality3D()==='performance'?'eyecandy':'performance'); updateIcon(); });
+  updateIcon();
+})();
 // ---------- Fullscreen toggle (persistent button, independent of game state) --
 // ponytail: element Fullscreen isn't supported on iPhone Safari (iPadOS/desktop/Android are fine)
 // — feature-detect and just hide the button there rather than show a control that silently no-ops.
