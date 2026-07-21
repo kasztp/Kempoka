@@ -14,9 +14,11 @@ renders every hairstyle as one generic cap with no beards at all (a deliberate s
 from the original 3D-mode work, tracked as a known gap).
 
 This spec covers: fixing the 3 hairstyle geometry bugs in Classic/Pixel, lengthening the
-old-master beard, adding real per-style hair + beard geometry to 3D mode, and fixing
-Classic mode's high-DPI blurriness. It does **not** cover new special moves or weapons —
-that's a separate, independently-scoped follow-up.
+old-master beard, adding real per-style hair + beard geometry to 3D mode, fixing
+Classic mode's high-DPI blurriness, and adding a new eyewear/accessories customization
+system (4 selectable designs) applied to Create Fighter and to the built-in Sensei Rob
+character. It does **not** cover new special moves or weapons — that's a separate,
+independently-scoped follow-up.
 
 ## Goals
 
@@ -32,11 +34,16 @@ that's a separate, independently-scoped follow-up.
   Classic/Pixel already show.
 - Classic mode (and, incidentally, the menus/HUD and Pixel mode's edges) render crisply
   on high-DPI displays instead of blurry.
+- A new eyewear/accessories field lets any fighter (built-in or custom) wear one of 4
+  designs, selectable in Create Fighter, rendered consistently across all 3 modes.
+- Sensei Rob (a built-in character) gets a lighter hair color and Sensei's Sunglasses,
+  matching a reference photo the user provided.
 
 ## Non-goals
 
-- No changes to character data (`CHARACTERS`, `normalizeCharacter`, Create Fighter UI) —
-  every fix is pure rendering geometry using data that already exists.
+- No changes to existing character data fields (`build`, `stats`, `special`, etc.) or to
+  `CHARACTERS`/`normalizeCharacter`/Create Fighter UI beyond what's needed to add the new
+  `glasses`/`glassesTint` fields — everything else about character data is untouched.
 - No changes to gameplay, hitboxes, or animation timing.
 - No new hairstyles or beard styles.
 - No perspective or camera changes to the 3D renderer.
@@ -171,20 +178,83 @@ all pointer-to-world-coordinate math goes through) reads `cv.getBoundingClientRe
 CSS layout box) and compares it against the logical `W`/`H` constants — it never reads
 `cv.width`/`cv.height` directly, so hit-testing is unaffected by this change.
 
+### 7. Eyewear/accessories system (new)
+
+**Data model:** two new character fields, validated the same way `hair.style`/`beard`
+already are:
+- `glasses`: one of `none` / `sensei` / `dark` / `potter` / `monocle` (new `GLASSES_ORDER`
+  array in `game-logic.js`), default `none`.
+- `glassesTint`: one of `black` / `brown` / `pink` (new `TINT_ORDER` array), only
+  meaningful when `glasses==='dark'`, default `black`.
+
+**A new shared convention — "eye level":** every render mode currently draws heads as a
+plain circle/sphere with no eyes or other facial features at all (hair/beard are the only
+things drawn on the face). Glasses need a reference point, so this adds one, used
+identically by every glasses type and by the monocle's bruise: centered on the face,
+symmetric left-right, at `head[1]-headR*0.05` (Classic/Pixel) — the same "no true
+profile, symmetric circle" convention the beard already uses. The monocle's bruise sits on
+one fixed side, not tied to facing — the same convention the ponytail already uses for
+which side it droops toward.
+
+**Shapes, per type:**
+- `sensei` / `dark` — two rounded aviator-style lenses (ellipses in Classic, circles in
+  Pixel and 3D) joined by a thin bridge line/`bone()`. Tint: `sensei` is always a fixed
+  warm orange; `dark` uses `glassesTint` (black/dark-brown/pink).
+- `potter` — two thin black-outlined circles with **no fill** (Classic/Pixel: stroke only,
+  so skin shows through) joined by a small bridge. Labeled **"Round Glasses"** in the UI
+  and every translation, not "Harry Potter Glasses" — same shape, but shipped game text
+  stays clear of a trademarked character name.
+- `monocle` — not a lens at all: a soft dark bruise/black-eye patch over one eye. Always
+  the same side, regardless of facing.
+
+**3D specifics:** reuses only the existing `sphere` mesh and the existing
+`boxScaleMatrix`/`bone()` helpers — no new mesh generator. A lens (or the monocle bruise)
+is a `sphere` flattened thin along Z via `boxScaleMatrix`'s independent x/y/z scale,
+producing a disc-like shape facing the camera. `potter`'s "see-through" lens layers a
+smaller skin-toned flattened sphere in front of a larger black-rimmed one, so the rim
+reads as a thin frame with the skin visible through the middle — no true transparency
+needed. One accepted tradeoff: this renderer's exact-normal-transform invariant (established
+for every other mesh — see `render3d.js`'s comments on `pointMatrix`/`boneMatrix`) does
+**not** hold for a non-uniformly-flattened sphere's front-facing normals specifically (it
+still holds everywhere the scale is uniform, i.e., the equator/rim). The result is a small,
+cosmetically-irrelevant lighting inaccuracy on the flattened face of an accessory this
+size — not worth adding a new inverse-transpose matrix path for.
+
+**Create Fighter UI:** one new cycling button (glasses type, identical click-to-cycle
+pattern as the existing hairstyle/beard buttons: `GLASSES_ORDER[(indexOf+1)%length]`),
+plus a second button that appears only when `dark` is selected (cycles `TINT_ORDER`).
+`randomizeDraft()` also randomizes glasses (weighted toward `none`, matching how
+`beard`'s randomizer already weights toward no beard). New i18n labels needed for all 6
+languages: a caption for each button plus per-value labels — all simple, directly
+translatable vocabulary (colors, "glasses", "none", "round", "monocle" — the last being a
+near-identical loanword in most of the game's 6 languages already).
+
+**Sensei Rob (built-in character) update:** `hair.color` changes from a dark brown
+(`#3a2a1a`) to a lighter dirty-blonde (`#8a6d4a`), and `glasses:'sensei'` is added to his
+`CHARACTERS` entry — matching a reference photo the user provided. No other built-in
+character changes.
+
 ## Testing
 
-- No `game-logic.js` changes — nothing to add to `game-logic.test.js`.
-- All fixes are visual/geometric; verification is manual, in a real browser: character
-  select portraits (which exercise Classic rendering for every hairstyle/beard
-  combination regardless of the active `GFX` mode, per the existing `state==='fight'`
-  gate) are the fastest way to check Classic's fixes across every hairstyle at once, then
-  spot-check Pixel and 3D in an actual fight.
+- `game-logic.test.js` gets new coverage: `GLASSES_ORDER`/`TINT_ORDER` are non-empty and
+  `normalizeCharacter` clamps out-of-range `glasses`/`glassesTint` values to their
+  defaults (mirroring the existing `beard`/`hair.style` validation tests) — everything
+  else in this spec stays visual/geometric with no automated coverage, same as before.
+- All rendering fixes are visual/geometric; verification is manual, in a real browser:
+  character select portraits (which exercise Classic rendering for every hairstyle/beard/
+  glasses combination regardless of the active `GFX` mode, per the existing
+  `state==='fight'` gate) are the fastest way to check Classic's fixes across every
+  combination at once, then spot-check Pixel and 3D in an actual fight.
 - The DPI fix should be checked at at least two different `devicePixelRatio` values if
   possible (e.g., via the browser's device-emulation tools) to confirm both the crisp
   rendering and that touch/click hit-testing still lines up correctly.
+- Sensei Rob specifically should be checked in all 3 graphics modes (character select
+  portrait for Classic/Pixel, an actual fight for 3D) to confirm the lighter hair and
+  Sensei's Sunglasses render as intended.
 
 ## Open risks
 
-- The mohawk fan's exact angles/lengths and the enlarged bun radius are aesthetic
-  judgment calls, not derived from a hard requirement — if they don't look right once
-  rendered, they're cheap constants to retune, not a structural problem.
+- The mohawk fan's exact angles/lengths, the enlarged bun radius, and the glasses/monocle
+  proportions are aesthetic judgment calls, not derived from a hard requirement — if they
+  don't look right once rendered, they're cheap constants to retune, not a structural
+  problem.
