@@ -1375,9 +1375,12 @@ function runSelfCheck(){
            && moveDir(a,b,{right:true})==='toward' && moveDir(a,b,{left:true})==='back' && moveDir(a,b,{})==='neutral';
   const ok6 = KICKS.up.name==='Head kick' && PUNCHES.up.launch<0;   // tables wired
   const ok7 = ROSTER.length>=CHARACTERS.length && ROSTER[0]===CHARACTERS[0];   // roster combiner sane
-  const pass=ok1&&ok2&&ok3&&ok4&&ok5&&ok6&&ok7;
+  const ok8 = has3DSupport()===true && STAGES_3D.length===4
+    && Number.isFinite(JOINT_DEPTH.hip) && Number.isFinite(JOINT_DEPTH.fFoot) && Number.isFinite(JOINT_DEPTH.fHand);
+  const pass=ok1&&ok2&&ok3&&ok4&&ok5&&ok6&&ok7&&ok8;
   console.assert(ok1,'block should reduce damage'); console.assert(ok2,'rect overlap'); console.assert(ok3,'grab fails at range'); console.assert(ok4,'grab works in range');
   console.assert(ok5,'moveDir maps directions'); console.assert(ok6,'move tables wired'); console.assert(ok7,'ROSTER combines CHARACTERS + custom');
+  console.assert(ok8,'GFX:3D initialized: WebGL support detected, 4 stages wired, joint depths finite');
   const el=document.createElement('div'); el.style.cssText='position:fixed;top:8px;left:8px;z-index:99;font:bold 16px monospace;padding:8px 12px;border-radius:6px;color:#000;background:'+(pass?'#3c3':'#f44');
   el.textContent='SELF-CHECK '+(pass?'PASS':'FAIL'); document.body.appendChild(el);
   // async: verify the CharacterStore round-trips (save -> list -> remove), the actual persistence contract
