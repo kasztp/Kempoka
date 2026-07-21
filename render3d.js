@@ -327,6 +327,7 @@ function draw3DFighter(f,h,c,pose,g,hip,sh,head,headR,fFoot,bFoot,fHand,bHand,fK
   ball(headW, headR, skin);
   draw3DHair(c.hair.style, headW, headR, hairColor);
   draw3DBeard(beardStyle(c), headW, headR, hairColor, torsoR);
+  draw3DGlasses(c.glasses, c.glassesTint, headW, headR, skin);
 }
 
 // Per-style hair, in 3D. `style` is one of short/braid/bald/punk/leia/headguard
@@ -402,6 +403,40 @@ function draw3DBeard(bStyle, headW, headR, hairColor, torsoR){
   const p0=[hx,hy+headR*0.35,front], p1=[hx,hy+headR*1.8,front], p2=[hx,hy+headR*3.4,front];
   bone(p0,p1, headR*0.28, beardColor); bone(p1,p2, headR*0.16, beardColor);
   ball(p2, headR*0.14, beardColor);
+}
+
+// Per-style eyewear, in 3D. gType is one of none/sensei/dark/potter/monocle
+// (GLASSES_ORDER in game-logic.js). Every lens/bruise is the existing sphere mesh
+// flattened thin along Z via boxScaleMatrix's independent x/y/z scale — no new mesh.
+// ponytail: a flattened sphere's lighting normal is only exact where its scale is
+// uniform (the rim), not on the flattened front face — a cosmetically-irrelevant
+// inaccuracy on an accessory this small, not worth a dedicated normal matrix for.
+function draw3DGlasses(gType, gTint, headW, headR, skinColor){
+  if(!gType || gType==='none') return;
+  // front clears the head sphere's own surface (same depth-test problem draw3DBeard's
+  // "front" comment above describes): with depth testing on, anything drawn shallower
+  // than the sphere's front face at that x/y offset is invisible, hidden behind the head.
+  // A factor of 1.1 (vs. the plan's original 0.55, which sat entirely inside the sphere
+  // and rendered no visible glasses at all — confirmed via manual 3D-mode testing) puts
+  // every lens/rim safely in front of the face.
+  const [hx,hy,hz]=headW, ey=hy-headR*0.05, lx=hx-headR*0.42, rx=hx+headR*0.42, front=hz-headR*1.1;
+  if(gType==='monocle'){
+    draw3D('sphere', boxScaleMatrix(lx,ey,front, headR*0.3,headR*0.24,headR*0.12), 0.31,0.16,0.27);
+    return;
+  }
+  if(gType==='potter'){
+    const rimColor=[0.1,0.1,0.1];
+    [lx,rx].forEach(cx=>{
+      draw3D('sphere', boxScaleMatrix(cx,ey,front, headR*0.3,headR*0.3,headR*0.08), rimColor[0],rimColor[1],rimColor[2]);
+      draw3D('sphere', boxScaleMatrix(cx,ey,front-headR*0.02, headR*0.24,headR*0.24,headR*0.08), skinColor[0],skinColor[1],skinColor[2]);
+    });
+    bone([lx+headR*0.3,ey,front],[rx-headR*0.3,ey,front], headR*0.05, rimColor);
+    return;
+  }
+  // sensei / dark
+  const tint = gType==='sensei' ? [0.85,0.5,0.15] : {black:[0.08,0.08,0.08],brown:[0.35,0.2,0.1],pink:[0.85,0.5,0.6]}[gTint||'black'];
+  [lx,rx].forEach(cx=>{ draw3D('sphere', boxScaleMatrix(cx,ey,front, headR*0.32,headR*0.24,headR*0.1), tint[0],tint[1],tint[2]); });
+  bone([lx+headR*0.32,ey,front],[rx-headR*0.32,ey,front], headR*0.05, [0.1,0.1,0.1]);
 }
 
 // ---------- stage scenes ------------------------------------------------------------
