@@ -337,7 +337,48 @@ function stageDojo3D(t){
     bone([bx+sway*0.3,94,40], [bx,260,40], 16, [0.29,0.20,0.14]);
   });
 }
-const STAGES_3D = [stageDojo3D, stageDojo3D, stageDojo3D, stageDojo3D];   // Task 5 replaces indices 1-3
+
+function stageRooftop3D(t){
+  gl.uniform3f(uFogColor, 0.06,0.08,0.14); gl.uniform1f(uFogNear, 60); gl.uniform1f(uFogFar, 380);
+  draw3D('quadFloor', boxScaleMatrix(R3D_W/2, R3D_GROUND, 100, R3D_W, 1, 220), 0.12,0.13,0.15);
+  draw3D('quadWall', boxScaleMatrix(R3D_W/2, 0, 300, R3D_W, R3D_GROUND, 1), 0.04,0.06,0.12);
+  DECOR.buildings.filter((b,i)=>i%2===0).slice(0,10).forEach((b,i)=>{
+    const bw=Math.max(30,b.w*0.6), bh=R3D_GROUND-b.top;
+    draw3D('quadWall', boxScaleMatrix(b.x+bw/2, b.top, 220+((i%3)*20), bw, bh, 1), 0.05,0.06,0.09);
+    const wc = [[1,0.83,0.42],[0.48,0.88,1],[1,0.48,0.82]][i%3];
+    draw3D('quadWall', boxScaleMatrix(b.x+bw/2, b.top+18, 218+((i%3)*20), bw*0.4, 10, 1), wc[0],wc[1],wc[2]);
+  });
+  bone([R3D_W*0.15,80,0],[R3D_W*0.15,R3D_GROUND,0],3,[0.5,0.55,0.6]);
+  bone([R3D_W*0.85,80,0],[R3D_W*0.85,R3D_GROUND,0],3,[0.5,0.55,0.6]);
+}
+
+function stageBamboo3D(t){
+  gl.uniform3f(uFogColor, 0.18,0.16,0.09); gl.uniform1f(uFogNear, 80); gl.uniform1f(uFogFar, 400);
+  draw3D('quadFloor', boxScaleMatrix(R3D_W/2, R3D_GROUND, 110, R3D_W, 1, 240), 0.26,0.20,0.12);
+  draw3D('quadWall', boxScaleMatrix(R3D_W/2, 0, 280, R3D_W, R3D_GROUND, 1), 0.23,0.20,0.13);
+  DECOR.bamboo.slice(0,9).forEach(b=>{
+    const sway = Math.sin(t*0.8+b.ph)*6;
+    bone([b.x+sway,R3D_GROUND,180], [b.x,b.top,180], Math.max(2,b.w*0.5), [0.33,0.42,0.20]);
+  });
+  [110,850].forEach(lx=>{
+    bone([lx,R3D_GROUND-30,60],[lx,R3D_GROUND-52,60], 12, [0.54,0.54,0.50]);
+    ball([lx,R3D_GROUND-58,60], 10, [1,0.81,0.48]);
+  });
+}
+
+function stageArena3D(t){
+  const flash = Math.sin(t*9)+Math.sin(t*13) > 1.6 ? 0.18 : 0;
+  gl.uniform3f(uFogColor, 0.05,0.05,0.06); gl.uniform1f(uFogNear, 80); gl.uniform1f(uFogFar, 420);
+  draw3D('quadFloor', boxScaleMatrix(R3D_W/2, R3D_GROUND, 120, R3D_W, 1, 260), 0.79+flash,0.75+flash,0.66+flash);
+  draw3D('quadWall', boxScaleMatrix(R3D_W/2, 0, 300, R3D_W, R3D_GROUND, 1), 0.05+flash,0.05+flash,0.06+flash);
+  [R3D_GROUND-96,R3D_GROUND-64,R3D_GROUND-32].forEach(ry=>{
+    bone([44,ry,20],[R3D_W-44,ry,20], 3, [0.76,0.2,0.2]);
+  });
+  bone([34,R3D_GROUND-104,20],[34,R3D_GROUND,20], 6, [0.91,0.89,0.81]);
+  bone([R3D_W-34,R3D_GROUND-104,20],[R3D_W-34,R3D_GROUND,20], 6, [0.91,0.89,0.81]);
+}
+
+const STAGES_3D = [stageDojo3D, stageRooftop3D, stageBamboo3D, stageArena3D];
 
 const exportsObj = {
   mat4Identity, mat4Multiply, mat4Ortho, normalize3, hexToRgb01,
