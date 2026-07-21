@@ -302,6 +302,7 @@ const I18N = {
   gfx:{en:'GFX',de:'GFX',es:'GFX',it:'GFX',fr:'GFX',hu:'GFX'},
   classic:{en:'CLASSIC',de:'KLASSISCH',es:'CLÁSICO',it:'CLASSICO',fr:'CLASSIQUE',hu:'KLASSZIKUS'},
   pixel:{en:'PIXEL',de:'PIXEL',es:'PÍXEL',it:'PIXEL',fr:'PIXEL',hu:'PIXEL'},
+  '3d':{en:'3D',de:'3D',es:'3D',it:'3D',fr:'3D',hu:'3D'},
   on:{en:'ON',de:'AN',es:'SÍ',it:'SÌ',fr:'OUI',hu:'BE'},
   off:{en:'OFF',de:'AUS',es:'NO',it:'NO',fr:'NON',hu:'KI'},
   auto:{en:'AUTO',de:'AUTO',es:'AUTO',it:'AUTO',fr:'AUTO',hu:'AUTO'},

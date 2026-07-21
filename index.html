@@ -180,9 +180,14 @@ addEventListener('keydown',e=>{ if(isFormField(e)) return; if(KEYMAP[e.code]) e.
 addEventListener('keyup',e=>{ if(isFormField(e)) return; keys.delete(e.code); });
 const touch={};
 let touchMode = localStorage.kmp_touch || 'auto';   // 'auto' | 'on' | 'off'
-let graphicsStyle = localStorage.kmp_graphics || 'classic';   // 'classic' | 'pixel'
+let graphicsStyle = localStorage.kmp_graphics || 'classic';   // 'classic' | 'pixel' | '3d'
+if(graphicsStyle==='3d' && !has3DSupport()) graphicsStyle='classic';   // device can't do it — fall back silently
 function applyGraphicsStyle(){ cv.style.imageRendering = graphicsStyle==='pixel' ? 'pixelated' : 'auto'; }
-function toggleGraphicsStyle(){ graphicsStyle = graphicsStyle==='pixel'?'classic':'pixel'; localStorage.kmp_graphics=graphicsStyle; applyGraphicsStyle(); }
+function toggleGraphicsStyle(){
+  const order = has3DSupport() ? ['classic','pixel','3d'] : ['classic','pixel'];
+  graphicsStyle = order[(order.indexOf(graphicsStyle)+1) % order.length];
+  localStorage.kmp_graphics=graphicsStyle; applyGraphicsStyle();
+}
 applyGraphicsStyle();
 
 // ---------- Language (menu-only setting, read live by every draw*() text call) --
@@ -828,7 +833,7 @@ function drawMenu(){
   btn(W/2-150,420,300,38,t(lang,'controls'),()=>{state='controls';},false);
   btn(W/2-195,466,110,38,t(lang,'music')+': '+(Audio.musicOn?t(lang,'on'):t(lang,'off')),()=>Audio.toggleMusic(),Audio.musicOn);
   btn(W/2-77,466,110,38,t(lang,'sfx')+': '+(Audio.sfxOn?t(lang,'on'):t(lang,'off')),()=>Audio.toggleSfx(),Audio.sfxOn);
-  btn(W/2+41,466,154,38,t(lang,'gfx')+': '+(graphicsStyle==='pixel'?t(lang,'pixel'):t(lang,'classic')),toggleGraphicsStyle,graphicsStyle==='pixel');
+  btn(W/2+41,466,154,38,t(lang,'gfx')+': '+(graphicsStyle==='pixel'?t(lang,'pixel'):graphicsStyle==='3d'?t(lang,'3d'):t(lang,'classic')),toggleGraphicsStyle,graphicsStyle!=='classic');
   drawLangPicker();
   buttons.forEach(drawBtn);
 }
