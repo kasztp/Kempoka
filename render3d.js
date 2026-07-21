@@ -321,12 +321,87 @@ function draw3DFighter(f,h,c,pose,g,hip,sh,head,headR,fFoot,bFoot,fHand,bHand,fK
   // hands/feet
   ball(fFootW,legR,skin); ball(bFootW,legR,skin);
   ball(fHandW,armR*1.3,skin); ball(bHandW,armR*1.3,skin);
-  // head + a simplified hair "cap" (every hairstyle renders as the same rounded cap in
-  // 3D, colored with the character's hair color — replicating each of Classic's 5 distinct
-  // hair silhouettes as real geometry would need new mesh shapes for no gameplay benefit).
-  // ponytail: simplified hair; add per-style 3D geometry later if it's visibly missed.
+  // head + per-style hair/beard geometry — mirrors the Classic/Pixel hairstyle shapes,
+  // built entirely from the same two primitives (bone=cylinder, ball=sphere) used
+  // everywhere else in this renderer, no new mesh types needed.
   ball(headW, headR, skin);
-  if(c.hair.style!=='bald') ball([headW[0],headW[1]-headR*0.35,headW[2]], headR*0.92, hairColor);
+  draw3DHair(c.hair.style, headW, headR, hairColor);
+  draw3DBeard(beardStyle(c), headW, headR, hairColor, torsoR);
+}
+
+// Per-style hair, in 3D. `style` is one of short/braid/bald/punk/leia/headguard
+// (HAIR_ORDER in game-logic.js). headW is the head joint's world position [x,y,z].
+function draw3DHair(style, headW, headR, hairColor){
+  if(style==='bald') return;
+  const [hx,hy,hz]=headW;
+  if(style==='punk'){
+    // fan of thin spikes from one anchor at the top of the skull, fanned along X. X is the
+    // character's facing/profile axis (the direction the fighter stands sideways toward),
+    // so a ridge fanned along X runs front-to-back across the skull — anatomically the
+    // right direction for a mohawk on a sideways-facing figure. Z is the ear-to-ear axis,
+    // which the fixed frontal camera can't usefully show anyway. Matches the Classic/Pixel
+    // mohawk fix's angle math exactly.
+    const bx=hx, by=hy-headR*0.82;
+    for(let i=-2;i<=2;i++){ const ang=i*0.36, spikeLen=headR*(0.75-Math.abs(i)*0.08);
+      const dx=Math.sin(ang), dy=-Math.cos(ang);
+      const tipX=bx+dx*spikeLen, tipY=by+dy*spikeLen;
+      bone([bx,by,hz],[tipX,tipY,hz], headR*0.1, hairColor);
+      ball([tipX,tipY,hz], headR*0.08, hairColor);
+    }
+    return;
+  }
+  if(style==='braid'){
+    const capR=headR*0.92, capCX=hx, capCY=hy-headR*0.35;
+    ball([capCX,capCY,hz], capR, hairColor);                      // cap
+    // strand starts on the cap's own surface (lower-back side), not the bare head sphere
+    const p0=[capCX-capR*0.75, capCY+capR*0.5, hz];
+    const p1=[hx-headR*1.5, hy+headR*1.0, hz];
+    const p2=[hx-headR*1.3, hy+headR*2.2, hz];
+    bone(p0,p1, headR*0.16, hairColor); bone(p1,p2, headR*0.11, hairColor);
+    ball(p2, headR*0.11, hairColor);
+    return;
+  }
+  if(style==='leia'){
+    ball([hx-headR*0.9, hy-headR*0.05, hz], headR*0.6, hairColor);
+    ball([hx+headR*0.9, hy-headR*0.05, hz], headR*0.6, hairColor);
+    ball([hx, hy-headR*0.35, hz], headR*0.75, hairColor);
+    return;
+  }
+  if(style==='headguard'){
+    ball([hx, hy-headR*0.15, hz], headR*1.1, hairColor);
+    ball([hx-headR*0.95, hy+headR*0.05, hz], headR*0.4, hairColor);
+    ball([hx+headR*0.95, hy+headR*0.05, hz], headR*0.4, hairColor);
+    return;
+  }
+  // 'short' (the only remaining non-bald style): a plain rounded cap
+  ball([hx, hy-headR*0.35, hz], headR*0.92, hairColor);
+}
+
+// Per-style beard, in 3D. bStyle is one of none/full/moustache/goatee/long
+// (BEARD_ORDER in game-logic.js).
+function draw3DBeard(bStyle, headW, headR, hairColor, torsoR){
+  if(bStyle==='none') return;
+  const [hx,hy,hz]=headW;
+  // Every beard primitive is drawn at this Z, not the bare head Z (hz): the head sphere
+  // (radius headR) and torso cylinder (radius torsoR) both bulge toward the camera by
+  // their own radius since they're centered at hz too, so anything drawn at hz sits
+  // behind their front surface and loses the depth test. Clearing by the LARGER of the
+  // two radii (not assuming headR>torsoR — Create Fighter's build sliders can make a
+  // short, stocky character where torsoR exceeds headR) guarantees the beard clears both.
+  const front = hz - Math.max(headR, torsoR)*1.3;
+  const beardColor = bStyle==='long' ? hexToRgb01('#c9c9c9') : hairColor;
+  if(bStyle==='full'){ ball([hx,hy+headR*0.5,front], headR*0.6, beardColor); return; }
+  if(bStyle==='moustache'){ bone([hx-headR*0.45,hy+headR*0.32,front],[hx+headR*0.45,hy+headR*0.32,front], headR*0.1, beardColor); return; }
+  if(bStyle==='goatee'){
+    bone([hx-headR*0.4,hy+headR*0.3,front],[hx+headR*0.4,hy+headR*0.3,front], headR*0.1, beardColor);
+    ball([hx,hy+headR*0.55,front], headR*0.28, beardColor);
+    return;
+  }
+  // 'long' (old master) — reaches down about as far as the lengthened Classic/Pixel
+  // version (headR*3.4)
+  const p0=[hx,hy+headR*0.35,front], p1=[hx,hy+headR*1.8,front], p2=[hx,hy+headR*3.4,front];
+  bone(p0,p1, headR*0.28, beardColor); bone(p1,p2, headR*0.16, beardColor);
+  ball(p2, headR*0.14, beardColor);
 }
 
 // ---------- stage scenes ------------------------------------------------------------
