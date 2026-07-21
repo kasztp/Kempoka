@@ -441,15 +441,400 @@ git commit -m "Add per-style 3D hair and beard geometry to draw3DFighter"
 
 ---
 
+### Task 4: Eyewear/accessories data model, validation, i18n, and Create Fighter UI
+
+**Files:**
+- Modify: `game-logic.js` (new `GLASSES_ORDER`/`TINT_ORDER` consts near `HAIR_ORDER`/
+  `BEARD_ORDER`; `normalizeCharacter`'s return object; `I18N` table; `exportsObj`)
+- Modify: `game-logic.test.js` (new validation tests)
+- Modify: `index.html` (`newDraft()`, `randomizeDraft()`, `drawCreate()`)
+
+**Interfaces:**
+- Produces: `GLASSES_ORDER = ['none','sensei','dark','potter','monocle']`,
+  `TINT_ORDER = ['black','brown','pink']` (exported globals, consumed by Tasks 5-6's
+  rendering code and by Create Fighter's cycle buttons).
+- Every character object (built-in or custom) gains `glasses` (string, one of
+  `GLASSES_ORDER`) and `glassesTint` (string, one of `TINT_ORDER`) fields, defaulting to
+  `'none'`/`'black'`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Add to `game-logic.test.js` (find the existing `normalizeCharacter` test block and add
+these alongside it):
+
+```js
+test('GLASSES_ORDER/TINT_ORDER: non-empty and include the expected values', () => {
+  assert.deepEqual(GLASSES_ORDER, ['none','sensei','dark','potter','monocle']);
+  assert.deepEqual(TINT_ORDER, ['black','brown','pink']);
+});
+test('normalizeCharacter: clamps out-of-range glasses/glassesTint to safe defaults', () => {
+  const n1 = normalizeCharacter({id:'x', glasses:'not-a-real-type', glassesTint:'neon'});
+  assert.equal(n1.glasses, 'none');
+  assert.equal(n1.glassesTint, 'black');
+  const n2 = normalizeCharacter({id:'y', glasses:'potter', glassesTint:'pink'});
+  assert.equal(n2.glasses, 'potter');
+  assert.equal(n2.glassesTint, 'pink');
+});
+```
+
+This needs `GLASSES_ORDER, TINT_ORDER` added to the test file's existing `require`
+destructure. In `game-logic.test.js`, modify:
+
+```js
+  HAIR_ORDER, BEARD_ORDER, SPECIAL_TYPE_IDS, normalizeCharacter,
+```
+
+to:
+
+```js
+  HAIR_ORDER, BEARD_ORDER, GLASSES_ORDER, TINT_ORDER, SPECIAL_TYPE_IDS, normalizeCharacter,
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `npm test`
+Expected: FAIL — `GLASSES_ORDER is not defined` (or similar; the two new consts and the
+`normalizeCharacter` fields don't exist yet).
+
+- [ ] **Step 3: Implement in `game-logic.js`**
+
+Add right after the existing `const BEARD_ORDER = ['none','full','moustache','goatee','long'];`
+line:
+
+```js
+const GLASSES_ORDER = ['none','sensei','dark','potter','monocle'];
+const TINT_ORDER = ['black','brown','pink'];
+```
+
+In `normalizeCharacter`'s return object, add these two lines right after the existing
+`beard:` line:
+
+```js
+    glasses: GLASSES_ORDER.includes(raw.glasses) ? raw.glasses : 'none',
+    glassesTint: TINT_ORDER.includes(raw.glassesTint) ? raw.glassesTint : 'black',
+```
+
+In the `I18N` table, add these rows right after the existing `beardLong:` row:
+
+```js
+  glassesCaption:{en:'GLASSES',de:'BRILLE',es:'GAFAS',it:'OCCHIALI',fr:'LUNETTES',hu:'SZEMÜVEG'},
+  tintCaption:{en:'TINT',de:'TÖNUNG',es:'TONO',it:'TONALITÀ',fr:'TEINTE',hu:'SZÍNEZET'},
+  glassesNone:{en:'NONE',de:'KEIN',es:'NINGUNAS',it:'NESSUNI',fr:'AUCUNES',hu:'NINCS'},
+  glassesSensei:{en:"SENSEI'S SHADES",de:'SENSEI-BRILLE',es:'GAFAS DEL SENSEI',it:'OCCHIALI DEL SENSEI',fr:'LUNETTES DU SENSEI',hu:'SZENSZEI NAPSZEMÜVEGE'},
+  glassesDark:{en:'DARK SHADES',de:'DUNKLE BRILLE',es:'GAFAS OSCURAS',it:'OCCHIALI SCURI',fr:'LUNETTES FONCÉES',hu:'SÖTÉT SZEMÜVEG'},
+  glassesPotter:{en:'ROUND GLASSES',de:'RUNDE BRILLE',es:'GAFAS REDONDAS',it:'OCCHIALI TONDI',fr:'LUNETTES RONDES',hu:'KEREK SZEMÜVEG'},
+  glassesMonocle:{en:'MONOCLE',de:'MONOKEL',es:'MONÓCULO',it:'MONOCOLO',fr:'MONOCLE',hu:'MONOKLI'},
+  tintBlack:{en:'BLACK',de:'SCHWARZ',es:'NEGRO',it:'NERO',fr:'NOIR',hu:'FEKETE'},
+  tintBrown:{en:'BROWN',de:'BRAUN',es:'MARRÓN',it:'MARRONE',fr:'MARRON',hu:'BARNA'},
+  tintPink:{en:'PINK',de:'PINK',es:'ROSA',it:'ROSA',fr:'ROSE',hu:'RÓZSASZÍN'},
+```
+
+In `exportsObj`, add `GLASSES_ORDER, TINT_ORDER` to the existing
+`HAIR_ORDER, BEARD_ORDER, SPECIAL_TYPE_IDS, normalizeCharacter,` line, making it:
+
+```js
+  HAIR_ORDER, BEARD_ORDER, GLASSES_ORDER, TINT_ORDER, SPECIAL_TYPE_IDS, normalizeCharacter,
+```
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `npm test`
+Expected: PASS (all tests, including the 2 new ones).
+
+- [ ] **Step 5: Add the Create Fighter UI**
+
+In `index.html`, modify `newDraft()` — add two fields to the returned object, right after
+the existing `gi:SPANDEX_COLORS[0],` line:
+
+```js
+  gi:SPANDEX_COLORS[0],
+  glasses:'none', glassesTint:'black',
+```
+
+Modify `randomizeDraft()` — add right after the existing
+`draft.beard=Math.random()<0.55?'none':pick(['full','moustache','goatee','long']);` line:
+
+```js
+  draft.glasses=Math.random()<0.6?'none':pick(['sensei','dark','potter','monocle']);
+  draft.glassesTint=pick(TINT_ORDER);
+```
+
+Modify `drawCreate()` — add right after the existing line that draws the outfit/hair/
+beard button row (the line starting `btn(276,214,84,30,t(lang,BEARD_LABELS[...`):
+
+```js
+  const GLASSES_LABELS={none:'glassesNone',sensei:'glassesSensei',dark:'glassesDark',potter:'glassesPotter',monocle:'glassesMonocle'};
+  const TINT_LABELS={black:'tintBlack',brown:'tintBrown',pink:'tintPink'};
+  ctx.fillStyle='#8a7d5c'; ctx.font='11px "Trebuchet MS"';
+  ctx.fillText(t(lang,'glassesCaption'),60,320);
+  if(draft.glasses==='dark') ctx.fillText(t(lang,'tintCaption'),180,320);
+  btn(60,326,110,30,t(lang,GLASSES_LABELS[draft.glasses||'none']),()=>{ draft.glasses=GLASSES_ORDER[(GLASSES_ORDER.indexOf(draft.glasses||'none')+1)%GLASSES_ORDER.length]; },draft.glasses&&draft.glasses!=='none');
+  if(draft.glasses==='dark'){
+    btn(180,326,110,30,t(lang,TINT_LABELS[draft.glassesTint||'black']),()=>{ draft.glassesTint=TINT_ORDER[(TINT_ORDER.indexOf(draft.glassesTint||'black')+1)%TINT_ORDER.length]; },false);
+  }
+```
+
+- [ ] **Step 6: Manually verify in a browser**
+
+Run: `python3 -m http.server 8000`, open `http://localhost:8000`, go to **Create Fighter**.
+Click the new glasses button — confirm it cycles `none → sensei's shades → dark shades →
+round glasses → monocle → none` and a second "tint" button appears only while `dark` is
+selected, itself cycling black/brown/pink. Click **🎲 Randomize** a few times — confirm
+`glasses`/`glassesTint` vary. (The live preview won't show the new shapes yet — that's
+Task 5 — just confirm the buttons/state/labels work.)
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add game-logic.js game-logic.test.js index.html
+git commit -m "Add glasses/accessories data model, validation, i18n, and Create Fighter UI"
+```
+
+---
+
+### Task 5: Glasses/accessories rendering — Classic & Pixel
+
+**Files:**
+- Modify: `index.html` (`drawFighterClassic`, right after the beard block; `drawFighterPixel`,
+  right after its beard block)
+
+**Interfaces:**
+- Consumes: `c.glasses`, `c.glassesTint` (Task 4), `head`, `headR` (already parameters of
+  both functions).
+
+- [ ] **Step 1: Add glasses drawing to `drawFighterClassic`**
+
+In `index.html`, add immediately after the beard `if/else if` chain's closing line (the
+`else if(bStyle==='long'){...}` line) and before the function's closing `}`:
+
+```js
+  // glasses (independent of hair/beard — a character can have any combination)
+  const glassesType = c.glasses || 'none';
+  if(glassesType==='monocle'){
+    ctx.fillStyle='rgba(80,40,70,.55)'; ctx.beginPath(); ctx.ellipse(head[0]-headR*0.42,head[1]-headR*0.05,headR*0.32,headR*0.24,0,0,7); ctx.fill();
+  } else if(glassesType!=='none'){
+    const ey=head[1]-headR*0.05, lx=head[0]-headR*0.42, rx=head[0]+headR*0.42, lw=headR*0.32, lh=headR*0.24;
+    if(glassesType==='potter'){
+      ctx.strokeStyle='#1a1a1a'; ctx.lineWidth=2.5;
+      [lx,rx].forEach(cx=>{ ctx.beginPath(); ctx.arc(cx,ey,lw*0.75,0,7); ctx.stroke(); });
+      ctx.beginPath(); ctx.moveTo(lx+lw*0.75,ey); ctx.lineTo(rx-lw*0.75,ey); ctx.stroke();
+    } else {
+      const tint = glassesType==='sensei' ? 'rgba(230,140,40,.7)' : {black:'rgba(20,20,20,.75)',brown:'rgba(90,55,30,.75)',pink:'rgba(230,140,170,.65)'}[c.glassesTint||'black'];
+      ctx.fillStyle=tint;
+      ctx.beginPath(); ctx.ellipse(lx,ey,lw,lh,0,0,7); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(rx,ey,lw,lh,0,0,7); ctx.fill();
+      ctx.strokeStyle='#1a1a1a'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.ellipse(lx,ey,lw,lh,0,0,7); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(rx,ey,lw,lh,0,0,7); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(lx+lw,ey); ctx.lineTo(rx-lw,ey); ctx.stroke();
+    }
+  }
+```
+
+- [ ] **Step 2: Add glasses drawing to `drawFighterPixel`**
+
+In `index.html`, add immediately after `drawFighterPixel`'s beard `if/else if` chain's
+closing line and before the "composite" comment:
+
+```js
+  // glasses (same shapes as Classic, drawn through the blocky toolkit)
+  const glassesType = c.glasses || 'none';
+  if(glassesType==='monocle'){
+    drawBlockyCircleFlat(head[0]-headR*0.42, head[1]-headR*0.05, headR*0.3, 'rgba(80,40,70,.6)', -headR*0.3, headR*0.3, bctx);
+  } else if(glassesType!=='none'){
+    const ey=head[1]-headR*0.05, lx=head[0]-headR*0.42, rx=head[0]+headR*0.42, lr=headR*0.28;
+    if(glassesType==='potter'){
+      bctx.strokeStyle='#1a1a1a'; bctx.lineWidth=2.5; bctx.lineCap='butt';
+      [lx,rx].forEach(cx=>{ bctx.beginPath(); bctx.arc(snap(cx),snap(ey),lr,0,7); bctx.stroke(); });
+      bctx.beginPath(); bctx.moveTo(snap(lx+lr),snap(ey)); bctx.lineTo(snap(rx-lr),snap(ey)); bctx.stroke();
+    } else {
+      const tint = glassesType==='sensei' ? 'rgba(230,140,40,.7)' : {black:'rgba(20,20,20,.75)',brown:'rgba(90,55,30,.75)',pink:'rgba(230,140,170,.65)'}[c.glassesTint||'black'];
+      drawBlockyCircleFlat(lx,ey,lr,tint,-lr,lr,bctx); drawBlockyCircleFlat(rx,ey,lr,tint,-lr,lr,bctx);
+      drawBlockyLimb([lx+lr,ey],[rx-lr,ey],3,'#1a1a1a',bctx);
+    }
+  }
+```
+
+- [ ] **Step 3: Manually verify in a browser**
+
+Reload, go to **Create Fighter**, cycle the glasses button through all 5 values and
+confirm the live preview (Classic rendering) shows: nothing for `none`; orange aviators
+for `sensei`; tinted aviators (cycle the tint button too — black/brown/pink) for `dark`;
+two thin unfilled circles for `potter` ("Round Glasses"); a dark bruise over one eye for
+`monocle`. Switch `GFX` to `PIXEL` and confirm the same 5 states in the character-select
+grid, blockier but matching.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add index.html
+git commit -m "Add glasses/accessories rendering to Classic and Pixel modes"
+```
+
+---
+
+### Task 6: Glasses/accessories rendering — 3D
+
+**Files:**
+- Modify: `render3d.js` (`draw3DFighter`, add a call after `draw3DBeard(...)`; add a new
+  `draw3DGlasses` function)
+
+**Interfaces:**
+- Consumes: `boxScaleMatrix`, `draw3D`, `bone` (existing), `c.glasses`, `c.glassesTint`
+  (Task 4), `skin` (already computed in `draw3DFighter` as `hexToRgb01(c.skin)`).
+
+- [ ] **Step 1: Add the call site in `draw3DFighter`**
+
+In `render3d.js`, modify:
+
+```js
+  ball(headW, headR, skin);
+  draw3DHair(c.hair.style, headW, headR, hairColor);
+  draw3DBeard(beardStyle(c), headW, headR, hairColor);
+}
+```
+
+to:
+
+```js
+  ball(headW, headR, skin);
+  draw3DHair(c.hair.style, headW, headR, hairColor);
+  draw3DBeard(beardStyle(c), headW, headR, hairColor);
+  draw3DGlasses(c.glasses, c.glassesTint, headW, headR, skin);
+}
+```
+
+- [ ] **Step 2: Add `draw3DGlasses`**
+
+In `render3d.js`, add this function right after `draw3DBeard`:
+
+```js
+// Per-style eyewear, in 3D. gType is one of none/sensei/dark/potter/monocle
+// (GLASSES_ORDER in game-logic.js). Every lens/bruise is the existing sphere mesh
+// flattened thin along Z via boxScaleMatrix's independent x/y/z scale — no new mesh.
+// ponytail: a flattened sphere's lighting normal is only exact where its scale is
+// uniform (the rim), not on the flattened front face — a cosmetically-irrelevant
+// inaccuracy on an accessory this small, not worth a dedicated normal matrix for.
+function draw3DGlasses(gType, gTint, headW, headR, skinColor){
+  if(!gType || gType==='none') return;
+  const [hx,hy,hz]=headW, ey=hy-headR*0.05, lx=hx-headR*0.42, rx=hx+headR*0.42, front=hz-headR*0.55;
+  if(gType==='monocle'){
+    draw3D('sphere', boxScaleMatrix(lx,ey,front, headR*0.3,headR*0.24,headR*0.12), 0.31,0.16,0.27);
+    return;
+  }
+  if(gType==='potter'){
+    const rimColor=[0.1,0.1,0.1];
+    [lx,rx].forEach(cx=>{
+      draw3D('sphere', boxScaleMatrix(cx,ey,front, headR*0.3,headR*0.3,headR*0.08), rimColor[0],rimColor[1],rimColor[2]);
+      draw3D('sphere', boxScaleMatrix(cx,ey,front-headR*0.02, headR*0.24,headR*0.24,headR*0.08), skinColor[0],skinColor[1],skinColor[2]);
+    });
+    bone([lx+headR*0.3,ey,front],[rx-headR*0.3,ey,front], headR*0.05, rimColor);
+    return;
+  }
+  // sensei / dark
+  const tint = gType==='sensei' ? [0.85,0.5,0.15] : {black:[0.08,0.08,0.08],brown:[0.35,0.2,0.1],pink:[0.85,0.5,0.6]}[gTint||'black'];
+  [lx,rx].forEach(cx=>{ draw3D('sphere', boxScaleMatrix(cx,ey,front, headR*0.32,headR*0.24,headR*0.1), tint[0],tint[1],tint[2]); });
+  bone([lx+headR*0.32,ey,front],[rx-headR*0.32,ey,front], headR*0.05, [0.1,0.1,0.1]);
+}
+```
+
+- [ ] **Step 3: Manually verify in a browser**
+
+Reload, switch `GFX` to `3D`. Use Create Fighter to build a fighter with each glasses
+type in turn (or edit a saved one), then start a 1-Player fight against them. Confirm:
+each type is visibly distinct (aviators/round-rimmed/bruise), sits at a consistent eye
+level across idle/walk/punch/kick poses, and doesn't clip badly through the head sphere.
+No console errors.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add render3d.js
+git commit -m "Add glasses/accessories rendering to 3D mode"
+```
+
+---
+
+### Task 7: Sensei Rob visual update
+
+**Files:**
+- Modify: `game-logic.js` (Sensei Rob's `CHARACTERS` entry)
+
+**Interfaces:** None — pure data change to one existing built-in character entry.
+
+- [ ] **Step 1: Update Sensei Rob's entry**
+
+In `game-logic.js`, modify:
+
+```js
+  { id:'rob', name:'Sensei Rob', beltRank:'dan1', outfit:'gi',
+    build:{scale:1.02,girth:1.0}, skin:'#e8b98f', hair:{color:'#3a2a1a',style:'short'}, beard:false,
+    stats:{maxHp:110,speed:1.05,power:1.05,defense:1.08},
+    special:{name:'Renraku', type:'combo'} },
+```
+
+to:
+
+```js
+  { id:'rob', name:'Sensei Rob', beltRank:'dan1', outfit:'gi',
+    build:{scale:1.02,girth:1.0}, skin:'#e8b98f', hair:{color:'#8a6d4a',style:'short'}, beard:false,
+    glasses:'sensei',
+    stats:{maxHp:110,speed:1.05,power:1.05,defense:1.08},
+    special:{name:'Renraku', type:'combo'} },
+```
+
+- [ ] **Step 2: Run the full test suite**
+
+Run: `npm test`
+Expected: PASS — the existing `CHARACTERS: five built-ins, unique ids, valid belt/
+outfit/stats/special` test doesn't assert specific hair colors, so this data-only change
+shouldn't break it; confirm that's actually true by reading the test, not just assuming.
+
+- [ ] **Step 3: Manually verify in a browser, across all 3 modes**
+
+Run: `python3 -m http.server 8000`, open `http://localhost:8000`. Go to character select
+— Sensei Rob's portrait (Classic rendering) should show lighter hair and orange aviator
+sunglasses. Switch `GFX` to `PIXEL` and check the same portrait. Switch `GFX` to `3D`,
+start a fight as or against Sensei Rob, and confirm the same look renders in 3D (lighter
+hair-colored cap, orange lens spheres at eye level).
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add game-logic.js
+git commit -m "Update Sensei Rob's hair color and add his signature sunglasses"
+```
+
+---
+
 ## Self-Review Notes
 
-- **Spec coverage:** every fix in `docs/superpowers/specs/2026-07-21-character-rendering-fixes-design.md`
-  maps to a task: ponytail/mohawk/buns/beard-length → Task 1 (Classic) & mirrored in Task 1
-  Step 2 (Pixel); DPI crispness → Task 2; per-style 3D hair+beard → Task 3.
+- **Spec coverage:** every fix/feature in
+  `docs/superpowers/specs/2026-07-21-character-rendering-fixes-design.md` maps to a task:
+  ponytail/mohawk/buns/beard-length → Task 1 (Classic) & mirrored in Task 1 Step 2
+  (Pixel); DPI crispness → Task 2; per-style 3D hair+beard → Task 3; eyewear data
+  model/validation/i18n/UI → Task 4; eyewear rendering (Classic/Pixel) → Task 5; eyewear
+  rendering (3D) → Task 6; Sensei Rob's visual update → Task 7.
 - **No placeholders:** Task 3's draft code originally referenced a non-existent
   `hexToRgb01_lastHairColor` — caught during this self-review and corrected inline (pass
   `hairColor` through `draw3DBeard`'s parameter list instead). The step above now shows
-  only the corrected version as the one to implement.
-- **Type/signature consistency:** `draw3DHair(style, headW, headR, hairColor)` and
-  `draw3DBeard(bStyle, headW, headR, hairColor)` are called with matching argument order
-  and types everywhere they appear in this plan.
+  only the corrected version as the one to implement. Task 4's test-file import step
+  originally described the required change in prose instead of showing the exact
+  before/after — also caught and corrected to a concrete diff.
+- **Type/signature consistency:** `draw3DHair(style, headW, headR, hairColor)`,
+  `draw3DBeard(bStyle, headW, headR, hairColor)`, and `draw3DGlasses(gType, gTint, headW,
+  headR, skinColor)` are called with matching argument order and types everywhere they
+  appear in this plan (Task 6's call site matches Task 3's `draw3DBeard` signature after
+  its own self-review fix, plus the new `draw3DGlasses` call).
+- **Task ordering matters here, unlike Tasks 1-3:** Tasks 5 and 6 insert code relative to
+  anchors (the beard block's end, the `draw3DBeard(...)` call line) that only exist in
+  their final form *after* Tasks 1 and 3 respectively have already been applied — this is
+  intentional (these tasks are insertions after already-established code, not standalone
+  replacements) and relies on executing this plan's tasks in numeric order, not in
+  parallel or out of sequence.
+- **Scope confirmed with the user before writing:** the eyewear/accessories system (Tasks
+  4-7) was an addition requested mid-session, presented back as a design summary and
+  confirmed before being added to the spec and this plan — it did not go through a full
+  separate brainstorming round-trip given how specific the original request already was,
+  but every concrete decision (data model, "eye level" convention, the "Round Glasses"
+  naming choice, Sensei Rob's exact color) was surfaced and confirmed first.
