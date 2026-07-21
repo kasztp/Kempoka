@@ -250,12 +250,102 @@ function init3D(canvas){
   return true;
 }
 
+// ---------- per-frame drawing -------------------------------------------------------
+function draw3D(meshName, model, r,g,b){
+  const m = meshes[meshName];
+  gl.bindBuffer(gl.ARRAY_BUFFER, m.vbuf); gl.vertexAttribPointer(aPosition,3,gl.FLOAT,false,0,0); gl.enableVertexAttribArray(aPosition);
+  gl.bindBuffer(gl.ARRAY_BUFFER, m.nbuf); gl.vertexAttribPointer(aNormal,3,gl.FLOAT,false,0,0); gl.enableVertexAttribArray(aNormal);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, m.ibuf);
+  gl.uniformMatrix4fv(uModel, false, model);
+  gl.uniform3f(uColor, r,g,b);
+  gl.drawElements(gl.TRIANGLES, m.count, gl.UNSIGNED_SHORT, 0);
+}
+
+function bone(a,b,radius,color){ draw3D('cylinder', boneMatrix(a[0],a[1],a[2], b[0],b[1],b[2], radius), color[0],color[1],color[2]); }
+function ball(p,radius,color){ draw3D('sphere', pointMatrix(p[0],p[1],p[2],radius), color[0],color[1],color[2]); }
+function shade3(rgb,amt){ return rgb.map(v=>Math.max(0,Math.min(1,v+amt))); }
+
+function begin3DFrame(stageIndex, t){
+  gl.clearColor(0,0,0,0);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.useProgram(prog);
+  gl.uniformMatrix4fv(uProjection, false, projectionMatrix);
+  STAGES_3D[stageIndex % STAGES_3D.length](t);
+}
+
+// ---------- fighter rendering -------------------------------------------------------
+// Fixed camera-relative depth per joint (independent of left/right facing — facing only
+// mirrors X, never Z). Front-side limbs (toward the opponent) bulge slightly toward the
+// camera; back-side limbs recede slightly — this is what makes the figure read as round
+// 3D rather than a flat cutout, using the exact same joints poseOf() already computes.
+const JOINT_DEPTH = { hip:0, sh:0, head:0, fFoot:-14, bFoot:14, fHand:-14, bHand:14, fKnee:-10 };
+
+function draw3DFighter(f,h,c,pose,g,hip,sh,head,headR,fFoot,bFoot,fHand,bHand,fKnee){
+  // Replicates the ctx.translate/scale/rotate stack drawFighter() applies in 2D (index.html)
+  // before dispatching, since this renderer has no canvas transform stack of its own. The KO
+  // pose's ctx.rotate is a rotation around the screen-perpendicular axis, which is exactly
+  // the camera's view axis here — so applying it to X/Y only and leaving Z untouched is the
+  // exact 3D equivalent, not an approximation.
+  let rot=0, offY=0;
+  if(pose==='ko'){ rot = f.airThrow ? f.rot : Math.PI/2; offY = -0.2*h; }
+  const cosR=Math.cos(rot), sinR=Math.sin(rot), fac=f.facing;
+  const J = (p,dz)=>{
+    const y1=p[1]+offY, cx=p[0]*cosR - y1*sinR, cy=p[0]*sinR + y1*cosR;
+    return [f.x+cx*fac, f.y+cy, dz];
+  };
+  const hipW=J(hip,JOINT_DEPTH.hip), shW=J(sh,JOINT_DEPTH.sh), headW=J(head,JOINT_DEPTH.head);
+  const fFootW=J(fFoot,JOINT_DEPTH.fFoot), bFootW=J(bFoot,JOINT_DEPTH.bFoot);
+  const fHandW=J(fHand,JOINT_DEPTH.fHand), bHandW=J(bHand,JOINT_DEPTH.bHand);
+  const fKneeW = fKnee ? J(fKnee,JOINT_DEPTH.fKnee) : null;
+
+  const isGi = c.outfit==='gi';
+  const pantsColor = hexToRgb01(isGi ? (giAboveBlue(c.beltRank)?GI_BLACK:GI_WHITE) : '#2b2b2b');
+  const topColor = hexToRgb01(isGi ? GI_BLACK : c.gi);
+  const skin = hexToRgb01(c.skin);
+  const hairColor = hexToRgb01(c.hair.color);
+  const legR=4*g, armR=3.5*g, torsoR=11*g;
+
+  // legs (front leg bends at the knee for kicks, exactly like drawFighterClassic)
+  if(fKneeW){ bone(hipW,fKneeW,legR,pantsColor); bone(fKneeW,fFootW,legR*0.9,pantsColor); }
+  else bone(hipW,fFootW,legR,pantsColor);
+  bone(hipW,bFootW,legR,pantsColor);
+  // back arm, torso, front arm (same draw order as Classic: back arm first so the torso
+  // partially occludes its shoulder end)
+  bone(shW,bHandW,armR,shade3(topColor,-0.15));
+  bone(hipW,shW,torsoR,topColor);
+  bone(shW,fHandW,armR,topColor);
+  // hands/feet
+  ball(fFootW,legR,skin); ball(bFootW,legR,skin);
+  ball(fHandW,armR*1.3,skin); ball(bHandW,armR*1.3,skin);
+  // head + a simplified hair "cap" (every hairstyle renders as the same rounded cap in
+  // 3D, colored with the character's hair color — replicating each of Classic's 5 distinct
+  // hair silhouettes as real geometry would need new mesh shapes for no gameplay benefit).
+  // ponytail: simplified hair; add per-style 3D geometry later if it's visibly missed.
+  ball(headW, headR, skin);
+  if(c.hair.style!=='bald') ball([headW[0],headW[1]-headR*0.35,headW[2]], headR*0.92, hairColor);
+}
+
+// ---------- stage scenes ------------------------------------------------------------
+// Each stage mirrors its 2D counterpart's existing prop density (floor + backdrop + a
+// couple of props) — a "3D-ified" version of an already-minimal scene, not a new one.
+function stageDojo3D(t){
+  gl.uniform3f(uFogColor, 0.10,0.09,0.08); gl.uniform1f(uFogNear, 80); gl.uniform1f(uFogFar, 420);
+  draw3D('quadFloor', boxScaleMatrix(R3D_W/2, R3D_GROUND, 120, R3D_W, 1, 260), 0.37,0.36,0.24);
+  draw3D('quadWall', boxScaleMatrix(R3D_W/2, 0, 260, R3D_W, R3D_GROUND, 1), 0.13,0.12,0.11);
+  [360,600].forEach((bx,k)=>{
+    const sway = Math.sin(t*1.1+k*2)*10;
+    bone([bx+sway*0.3,94,40], [bx,260,40], 16, [0.29,0.20,0.14]);
+  });
+}
+const STAGES_3D = [stageDojo3D, stageDojo3D, stageDojo3D, stageDojo3D];   // Task 5 replaces indices 1-3
+
 const exportsObj = {
   mat4Identity, mat4Multiply, mat4Ortho, normalize3, hexToRgb01,
   buildSphere, buildCylinder, buildQuadFloor, buildQuadWall,
   pointMatrix, boneMatrix, boxScaleMatrix,
   R3D_W, R3D_H, R3D_GROUND,
   has3DSupport, init3D, getQuality3D, setQuality3D,
+  draw3D, begin3DFrame, draw3DFighter, JOINT_DEPTH, STAGES_3D,
 };
 
 if(typeof module!=='undefined' && module.exports){ module.exports = exportsObj; }

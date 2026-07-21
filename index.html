@@ -451,7 +451,7 @@ function drawFighter(f){
     fHand=[0.42*h,-0.2*h]; bHand=[0.34*h,-0.24*h]; fFoot=[0.3*h,0]; bFoot=[-0.22*h,0]; }
   else if(pose==='clinch'||pose==='choke'){ fHand=[0.34*h,-0.7*h]; bHand=[0.28*h,-0.62*h]; hip[0]=0.03*h; }
 
-  (graphicsStyle==='pixel'?drawFighterPixel:drawFighterClassic)(f,h,c,pose,g,hip,sh,head,headR,fFoot,bFoot,fHand,bHand,fKnee);
+  (graphicsStyle==='3d'&&state==='fight' ? draw3DFighter : graphicsStyle==='pixel'?drawFighterPixel:drawFighterClassic)(f,h,c,pose,g,hip,sh,head,headR,fFoot,bFoot,fHand,bHand,fKnee);
   ctx.restore();
 }
 function drawFighterClassic(f,h,c,pose,g,hip,sh,head,headR,fFoot,bFoot,fHand,bHand,fKnee){
@@ -798,9 +798,13 @@ function stageArenaPixel(){ const t=now();
 }
 const STAGES_PIXEL=[stageDojoPixel, stageRooftopPixel, stageBambooPixel, stageArenaPixel];
 
-function bg(){ ctx.fillStyle=INK; ctx.fillRect(0,0,W,H);
-  const set = graphicsStyle==='pixel' ? STAGES_PIXEL : STAGES;
-  set[stageIndex % set.length]();
+function bg(){
+  if(graphicsStyle==='3d'){ ctx.clearRect(0,0,W,H); begin3DFrame(stageIndex, now()); }
+  else{
+    ctx.fillStyle=INK; ctx.fillRect(0,0,W,H);
+    const set = graphicsStyle==='pixel' ? STAGES_PIXEL : STAGES;
+    set[stageIndex % set.length]();
+  }
   ctx.strokeStyle='rgba(245,168,0,.20)'; ctx.lineWidth=2; ctx.strokeRect(30,GROUND+6,W-60,H-GROUND-14);
   drawWatermark(W-70,H-58,44,0.10);
 }
