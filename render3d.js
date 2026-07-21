@@ -456,7 +456,11 @@ function draw3DBelt(belt, hipW, shW, torsoR, g){
   const bz = hipW[2] - (torsoR+beltR)*1.15;
   const bx0=hipW[0]-torsoR, bx1=hipW[0]+torsoR, by=hipW[1]-4;
   bone([bx0,by,bz],[bx1,by,bz], beltR, hexToRgb01(belt.color));
-  if(belt.stripe) bone([bx0,by-3.5,bz-0.5],[bx1,by-3.5,bz-0.5], stripeR, hexToRgb01(belt.stripe));
+  // The stripe sits at a different Y-center and radius than the band, so a bare constant
+  // nudge (unlike the tip's, which shares the band's exact shape/center and so is always
+  // uniformly closer) isn't provably safe — this scales with beltR so the stripe's whole
+  // disk clears the band's frontmost point outright, at every valid Create Fighter girth.
+  if(belt.stripe){ const strZ=bz-(beltR+stripeR)*1.15; bone([bx0,by-3.5,strZ],[bx1,by-3.5,strZ], stripeR, hexToRgb01(belt.stripe)); }
   if(belt.tip) bone([bx1-6*g,by,bz-0.5],[bx1,by,bz-0.5], tipR, hexToRgb01(belt.tip));
   if(belt.dan){
     const chainR=1, pendantR=3, nx=shW[0], ny=shW[1]+6*g;
