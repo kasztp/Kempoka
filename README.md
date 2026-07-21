@@ -216,4 +216,5 @@ Leave `config.js` blank (its default) to keep playing fully offline/local.
 Branding: [The Chosen Ones — Zen Bu Kan Kempo](https://tcokempo.hu/).
 Music and sound effects are generated at runtime
 with the Web Audio API (original chiptune, no copyrighted material).
+
 Code: Peter Kaszt - 2026 (With the help of Claude.)
