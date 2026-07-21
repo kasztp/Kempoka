@@ -39,7 +39,8 @@ function beltLabel(id){ const b=getBelt(id); return b?b.label:'No Belt'; }
 // special needs a matching case in doSpecial(); reusing a type below needs no code.
 const CHARACTERS = [
   { id:'rob', name:'Sensei Rob', beltRank:'dan1', outfit:'gi',
-    build:{scale:1.02,girth:1.0}, skin:'#e8b98f', hair:{color:'#3a2a1a',style:'short'}, beard:false,
+    build:{scale:1.02,girth:1.0}, skin:'#e8b98f', hair:{color:'#8a6d4a',style:'short'}, beard:false,
+    glasses:'sensei',
     stats:{maxHp:110,speed:1.05,power:1.05,defense:1.08},
     special:{name:'Renraku', type:'combo'} },
   { id:'zsolti', name:'Zsolti', beltRank:'kyu3', outfit:'gi',
