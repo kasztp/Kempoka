@@ -949,6 +949,7 @@ function newDraft(){ return {
   name:'', beltRank:'kyu12', outfit:'gi',
   build:{scale:1.0,girth:1.0}, skin:SKIN_TONES[0], hair:{color:HAIR_COLORS[0],style:'short'}, beard:false,
   gi:SPANDEX_COLORS[0],
+  glasses:'none', glassesTint:'black',
   stats:{maxHp:100,speed:1.0,power:1.0,defense:1.0},
   special:{name:'Special',type:'combo'},
   custom:true,
@@ -975,6 +976,8 @@ function randomizeDraft(){
   draft.build.girth=+(0.8+Math.random()*0.65).toFixed(2);
   draft.skin=pick(SKIN_TONES); draft.hair.color=pick(HAIR_COLORS); draft.hair.style=pick(HAIR_ORDER);
   draft.beard=Math.random()<0.55?'none':pick(['full','moustache','goatee','long']);
+  draft.glasses=Math.random()<0.6?'none':pick(['sensei','dark','potter','monocle']);
+  draft.glassesTint=pick(TINT_ORDER);
   draft.gi=pick(SPANDEX_COLORS);
   draft.stats.maxHp=Math.round(84+Math.random()*52);
   draft.stats.speed=+(0.85+Math.random()*0.45).toFixed(2);
@@ -1066,6 +1069,15 @@ function drawCreate(){
   btn(60,214,110,30,draft.outfit==='gi'?t(lang,'gi'):t(lang,'spandex'),()=>{ draft.outfit=draft.outfit==='gi'?'spandex':'gi'; },false);
   btn(180,214,86,30,t(lang,HAIR_LABELS[draft.hair.style]),()=>{ draft.hair.style=HAIR_ORDER[(HAIR_ORDER.indexOf(draft.hair.style)+1)%HAIR_ORDER.length]; },false);
   btn(276,214,84,30,t(lang,BEARD_LABELS[beardStyle(draft)]),()=>{ draft.beard=BEARD_ORDER[(BEARD_ORDER.indexOf(beardStyle(draft))+1)%BEARD_ORDER.length]; },beardStyle(draft)!=='none');
+  const GLASSES_LABELS={none:'glassesNone',sensei:'glassesSensei',dark:'glassesDark',potter:'glassesPotter',monocle:'glassesMonocle'};
+  const TINT_LABELS={black:'tintBlack',brown:'tintBrown',pink:'tintPink'};
+  ctx.fillStyle='#8a7d5c'; ctx.font='11px "Trebuchet MS"';
+  ctx.fillText(t(lang,'glassesCaption'),60,320);
+  if(draft.glasses==='dark') ctx.fillText(t(lang,'tintCaption'),180,320);
+  btn(60,326,110,30,t(lang,GLASSES_LABELS[draft.glasses||'none']),()=>{ draft.glasses=GLASSES_ORDER[(GLASSES_ORDER.indexOf(draft.glasses||'none')+1)%GLASSES_ORDER.length]; },draft.glasses&&draft.glasses!=='none');
+  if(draft.glasses==='dark'){
+    btn(180,326,110,30,t(lang,TINT_LABELS[draft.glassesTint||'black']),()=>{ draft.glassesTint=TINT_ORDER[(TINT_ORDER.indexOf(draft.glassesTint||'black')+1)%TINT_ORDER.length]; },false);
+  }
   ctx.fillStyle=GOLD; ctx.font='bold 12px "Trebuchet MS"';
   ctx.fillText(t(lang,'skin'),60,266); placeEl(createUI.skin,60,274,50,30);
   ctx.fillText(t(lang,'hair'),124,266); placeEl(createUI.hairColor,124,274,50,30);

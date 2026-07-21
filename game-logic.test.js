@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const {
   KYU_RANKS, DAN_RANKS, BELT_TABLE, getBelt, giAboveBlue, BELT_CHOICES, beltLabel,
   CHARACTERS, CharacterStore, SharedStore,
-  HAIR_ORDER, BEARD_ORDER, SPECIAL_TYPE_IDS, normalizeCharacter,
+  HAIR_ORDER, BEARD_ORDER, GLASSES_ORDER, TINT_ORDER, SPECIAL_TYPE_IDS, normalizeCharacter,
   MOVES, PUNCHES, KICKS, CLINCH_RANGE,
   computeDamage, fh, bodyRect, rectsOverlap, inClinchRange, faceDir, moveDir,
   SUPPORTED_LANGS, I18N, t, detectDefaultLang,
@@ -188,6 +188,18 @@ test('normalizeCharacter: truncates over-long name/special.name to the input max
   const c = normalizeCharacter({ id:'x', name:'x'.repeat(50), special:{name:'y'.repeat(50)} });
   assert.equal(c.name.length, 16);
   assert.equal(c.special.name.length, 22);
+});
+test('GLASSES_ORDER/TINT_ORDER: non-empty and include the expected values', () => {
+  assert.deepEqual(GLASSES_ORDER, ['none','sensei','dark','potter','monocle']);
+  assert.deepEqual(TINT_ORDER, ['black','brown','pink']);
+});
+test('normalizeCharacter: clamps out-of-range glasses/glassesTint to safe defaults', () => {
+  const n1 = normalizeCharacter({id:'x', glasses:'not-a-real-type', glassesTint:'neon'});
+  assert.equal(n1.glasses, 'none');
+  assert.equal(n1.glassesTint, 'black');
+  const n2 = normalizeCharacter({id:'y', glasses:'potter', glassesTint:'pink'});
+  assert.equal(n2.glasses, 'potter');
+  assert.equal(n2.glassesTint, 'pink');
 });
 test('normalizeCharacter: rejects malformed hex colors, keeps valid ones', () => {
   const bad = normalizeCharacter({ id:'x', skin:'not-a-color', hair:{color:'javascript:alert(1)'}, gi:'#zzz' });
