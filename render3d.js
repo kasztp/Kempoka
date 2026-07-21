@@ -318,6 +318,8 @@ function draw3DFighter(f,h,c,pose,g,hip,sh,head,headR,fFoot,bFoot,fHand,bHand,fK
   bone(shW,bHandW,armR,shade3(topColor,-0.15));
   bone(hipW,shW,torsoR,topColor);
   bone(shW,fHandW,armR,topColor);
+  // belt band + Dan-rank necklace — mirrors drawFighterClassic/Pixel's belt/necklace
+  draw3DBelt(getBelt(c.beltRank), hipW, shW, torsoR, g);
   // hands/feet
   ball(fFootW,legR,skin); ball(bFootW,legR,skin);
   ball(fHandW,armR*1.3,skin); ball(bHandW,armR*1.3,skin);
@@ -437,6 +439,33 @@ function draw3DGlasses(gType, gTint, headW, headR, skinColor){
   const tint = gType==='sensei' ? [0.85,0.5,0.15] : {black:[0.08,0.08,0.08],brown:[0.35,0.2,0.1],pink:[0.85,0.5,0.6]}[gTint||'black'];
   [lx,rx].forEach(cx=>{ draw3D('sphere', boxScaleMatrix(cx,ey,front, headR*0.32,headR*0.24,headR*0.1), tint[0],tint[1],tint[2]); });
   bone([lx+headR*0.32,ey,front],[rx-headR*0.32,ey,front], headR*0.05, [0.1,0.1,0.1]);
+}
+
+// Belt band (waist) + Dan-rank necklace, in 3D. `belt` is the getBelt(c.beltRank) result
+// (falsy for no rank). Mirrors drawFighterClassic/Pixel's belt+necklace geometry, built
+// from the same bone()/ball() primitives — no new mesh types. Radii here are the same
+// "half of the matching 2D lineWidth" convention already used for legR/armR/torsoR
+// (2D belt/tip lineWidth 8*g -> 3D radius 4*g; unscaled 2D widths stay unscaled here too).
+function draw3DBelt(belt, hipW, shW, torsoR, g){
+  if(!belt) return;
+  const beltR=4*g, tipR=4*g, stripeR=1.25;
+  // Same depth-occlusion problem draw3DBeard/draw3DGlasses already solved: the torso is a
+  // cylinder of radius torsoR with no Z offset along its axis, so its own front surface
+  // sits at torsoR forward of hip/shoulder. Clearing it needs the belt's own half-thickness
+  // (beltR) added on top, with the same 1.1-ish margin factor used for glasses/beard.
+  const bz = hipW[2] - (torsoR+beltR)*1.15;
+  const bx0=hipW[0]-torsoR, bx1=hipW[0]+torsoR, by=hipW[1]-4;
+  bone([bx0,by,bz],[bx1,by,bz], beltR, hexToRgb01(belt.color));
+  if(belt.stripe) bone([bx0,by-3.5,bz-0.5],[bx1,by-3.5,bz-0.5], stripeR, hexToRgb01(belt.stripe));
+  if(belt.tip) bone([bx1-6*g,by,bz-0.5],[bx1,by,bz-0.5], tipR, hexToRgb01(belt.tip));
+  if(belt.dan){
+    const chainR=1, pendantR=3, nx=shW[0], ny=shW[1]+6*g;
+    const nz = shW[2] - (torsoR+pendantR)*1.15;
+    const chainColor=hexToRgb01('#c9ccd4');
+    bone([nx-8*g,ny-3,nz],[nx,ny+4,nz], chainR, chainColor);
+    bone([nx,ny+4,nz],[nx+8*g,ny-3,nz], chainR, chainColor);
+    ball([nx,ny+5,nz], pendantR, chainColor);
+  }
 }
 
 // ---------- stage scenes ------------------------------------------------------------
