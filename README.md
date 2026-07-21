@@ -128,6 +128,19 @@ get a parallel pixel-art treatment too (banded gradients instead of smooth ones,
 props), so the fighters and the world read as one consistent style. See `PIXEL_BUF_SCALE`/`PX` in
 `index.html` to tune chunkiness.
 
+Main menu → **GFX** cycles a third time into **3D**: the same fighters and stages,
+rendered as lit, rounded WebGL geometry — still procedurally generated at runtime, no
+model files, no textures, no external libraries. The camera is fixed and frontal, matching
+the exact framing Classic/Pixel already use, so HUD placement and hit timing never
+change — only how everything looks. If a device's browser doesn't support WebGL, this
+option is silently left out of the cycle and the game behaves exactly as it always has.
+
+During a 3D fight, a third button appears next to ⛶/⌂ (⚡ Performance / ✨ Eye Candy) to
+trade rendering quality for smoothness on phones and slower machines — lower-resolution
+rendering and simpler meshes vs. full detail. It only appears in 3D mode, since Classic
+and Pixel already draw at the same fixed cost regardless of device. Your choice persists
+across reloads, same as the GFX mode itself.
+
 ## Language — EN / DE / ES / IT / FR / HU
 
 A flag button sits in the top-right of the main menu. Click it to expand a list of the other 5
