@@ -538,6 +538,27 @@ function drawFighterClassic(f,h,c,pose,g,hip,sh,head,headR,fFoot,bFoot,fHand,bHa
   else if(bStyle==='long'){ ctx.fillStyle='#c9c9c9'; ctx.fillRect(head[0]-headR*0.55,head[1]+headR*0.28,headR*1.1,headR*0.2);
     // old-master beard reaches further down (was headR*2.6) for a properly long look
     ctx.beginPath(); ctx.moveTo(head[0]-headR*0.7,head[1]+headR*0.4); ctx.quadraticCurveTo(head[0],head[1]+headR*3.4,head[0]+headR*0.7,head[1]+headR*0.4); ctx.closePath(); ctx.fill(); }
+  // glasses (independent of hair/beard — a character can have any combination)
+  const glassesType = c.glasses || 'none';
+  if(glassesType==='monocle'){
+    ctx.fillStyle='rgba(80,40,70,.55)'; ctx.beginPath(); ctx.ellipse(head[0]-headR*0.42,head[1]-headR*0.05,headR*0.32,headR*0.24,0,0,7); ctx.fill();
+  } else if(glassesType!=='none'){
+    const ey=head[1]-headR*0.05, lx=head[0]-headR*0.42, rx=head[0]+headR*0.42, lw=headR*0.32, lh=headR*0.24;
+    if(glassesType==='potter'){
+      ctx.strokeStyle='#1a1a1a'; ctx.lineWidth=2.5;
+      [lx,rx].forEach(cx=>{ ctx.beginPath(); ctx.arc(cx,ey,lw*0.75,0,7); ctx.stroke(); });
+      ctx.beginPath(); ctx.moveTo(lx+lw*0.75,ey); ctx.lineTo(rx-lw*0.75,ey); ctx.stroke();
+    } else {
+      const tint = glassesType==='sensei' ? 'rgba(230,140,40,.7)' : {black:'rgba(20,20,20,.75)',brown:'rgba(90,55,30,.75)',pink:'rgba(230,140,170,.65)'}[c.glassesTint||'black'];
+      ctx.fillStyle=tint;
+      ctx.beginPath(); ctx.ellipse(lx,ey,lw,lh,0,0,7); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(rx,ey,lw,lh,0,0,7); ctx.fill();
+      ctx.strokeStyle='#1a1a1a'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.ellipse(lx,ey,lw,lh,0,0,7); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(rx,ey,lw,lh,0,0,7); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(lx+lw,ey); ctx.lineTo(rx-lw,ey); ctx.stroke();
+    }
+  }
 }
 function beardStyle(c){ if(c.beard===true) return 'full'; if(!c.beard) return 'none'; return c.beard; }
 // Reusable low-res offscreen buffer: fighters draw into this at reduced native resolution, then
@@ -618,6 +639,22 @@ function drawFighterPixel(f,h,c,pose,g,hip,sh,head,headR,fFoot,bFoot,fHand,bHand
   else if(bStyle==='long'){ bctx.fillStyle='#c9c9c9'; bctx.fillRect(snap(head[0]-headR*0.55),snap(head[1]+headR*0.28),snap(headR*1.1),snap(headR*0.2));
     // old-master beard reaches further down (was headR*2.6)
     bctx.beginPath(); bctx.moveTo(snap(head[0]-headR*0.7),snap(head[1]+headR*0.4)); bctx.quadraticCurveTo(snap(head[0]),snap(head[1]+headR*3.4),snap(head[0]+headR*0.7),snap(head[1]+headR*0.4)); bctx.closePath(); bctx.fill(); }
+  // glasses (same shapes as Classic, drawn through the blocky toolkit)
+  const glassesType = c.glasses || 'none';
+  if(glassesType==='monocle'){
+    drawBlockyCircleFlat(head[0]-headR*0.42, head[1]-headR*0.05, headR*0.3, 'rgba(80,40,70,.6)', -headR*0.3, headR*0.3, bctx);
+  } else if(glassesType!=='none'){
+    const ey=head[1]-headR*0.05, lx=head[0]-headR*0.42, rx=head[0]+headR*0.42, lr=headR*0.28;
+    if(glassesType==='potter'){
+      bctx.strokeStyle='#1a1a1a'; bctx.lineWidth=2.5; bctx.lineCap='butt';
+      [lx,rx].forEach(cx=>{ bctx.beginPath(); bctx.arc(snap(cx),snap(ey),lr,0,7); bctx.stroke(); });
+      bctx.beginPath(); bctx.moveTo(snap(lx+lr),snap(ey)); bctx.lineTo(snap(rx-lr),snap(ey)); bctx.stroke();
+    } else {
+      const tint = glassesType==='sensei' ? 'rgba(230,140,40,.7)' : {black:'rgba(20,20,20,.75)',brown:'rgba(90,55,30,.75)',pink:'rgba(230,140,170,.65)'}[c.glassesTint||'black'];
+      drawBlockyCircleFlat(lx,ey,lr,tint,-lr,lr,bctx); drawBlockyCircleFlat(rx,ey,lr,tint,-lr,lr,bctx);
+      drawBlockyLimb([lx+lr,ey],[rx-lr,ey],3,'#1a1a1a',bctx);
+    }
+  }
   // composite: the main ctx already has ctx.translate(f.x,f.y)+ctx.scale(f.facing,1) applied by the
   // caller, so drawing the buffer centered at local (0,0) inherits the correct position AND mirror.
   const smoothed=ctx.imageSmoothingEnabled; ctx.imageSmoothingEnabled=false;
