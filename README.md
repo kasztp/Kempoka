@@ -2,7 +2,7 @@
 
 A Street Fighter–style 2D fighting game themed around **Zen Bu Kan Kempo**. Runs in any
 browser on desktop (keyboard) or phone/tablet (touch). No dependencies, no build step —
-`index.html` is still everything a player needs.
+`index.html` is everything a player needs.
 
 ## Run it
 
@@ -36,7 +36,7 @@ combat math plus a live `CharacterStore` round-trip.
 `2` kick · `3` block · `0` special · `4` grab / counter
 
 **Touch:** on-screen pad (move/jump/crouch) + action buttons appear automatically on touch
-devices (during a fight). Touch drives Player 1 (vs CPU). On a desktop you can preview them via
+devices (during a fight). Touch drives Player 1 (vs CPU). On a desktop, you can preview them via
 **Controls → Touch buttons: ON**.
 
 **Moveset — direction + attack button.** You always auto-face the opponent; the *held direction*
@@ -51,7 +51,7 @@ Uppercut and head kick punish jump-ins; low kick and body hook stay under high s
 kicks work in mid-air; blocks, grabs, throws and chokes are ground-only. Takedowns whiff and leave you
 open if you shoot out of range or into a block. The full list is on the in-game **Controls** screen.
 
-## Grappling (Zen Bu Kan Kempo rules)
+## Grappling
 
 Throws and chokes are legal but **only from a clinch** — get close and **grab** first. From a
 clinch you can **throw** (knockdown) or, from behind, **choke** (a gradual drain). The grabbed
@@ -78,7 +78,7 @@ fighter (gi or spandex/rashguard) also wears a thin gold necklace with a small r
 ## Adding a character
 
 Every built-in fighter is one object in the `CHARACTERS` array in `game-logic.js`. Copy
-an existing entry, change the fields (name, `beltRank` — an id from the belt table above, or `null`
+an existing entry, change the fields (name, `beltRank` — an ID from the belt table above, or `null`
 for no belt — outfit, build, hair/beard, stats, special), and it shows up in character select
 automatically, belt and gi colors included — the grid pages to fit any number. A brand-new kind of
 special needs a matching `case` in `doSpecial()`; reusing an existing special type needs no code
@@ -89,8 +89,8 @@ changes.
 Main menu → **Create Fighter** lets a player build one without touching code: name, belt rank,
 gi/rashguard + colors, hairstyle, beard, build, stats, and a special move (picked from the same
 reusable special types above, with a custom name). Hairstyles: short, braid, bald, punk, buns
-("Leia"), or a padded headguard. Beard styles: none, full, moustache, goatee, or a long grey "old
-master" look. **🎲 Randomize** fills the whole form for a quick generated fighter. Saved fighters
+("Leia"), or a padded headguard. Beard styles: none, full, mustache, goatee, or a long grey "old
+master" look. **🎲 Randomize** fills the whole form for a quick-generated fighter. Saved fighters
 appear in every fighter-select screen alongside the built-ins (with a small badge), and can be
 edited or deleted from the **Create Fighter** screen's "My Fighters" list.
 
@@ -115,11 +115,11 @@ screen's "Main Menu" button). The HP bars are inset from the screen edges (`HUD_
 ## Graphics style — Classic / HD Pixel toggle
 
 Main menu, next to MUSIC/SFX: **GFX: CLASSIC / GFX: PIXEL** switches the whole game's rendering
-between the original smooth vector look and a from-scratch **HD retro pixel-art** style — both
+between the original smooth vector look and a **HD retro pixel-art** style — both
 procedurally generated at runtime, no sprite assets, no new dependencies. The switch is instant
-(works mid-fight) and persists across reloads.
+(theoretically works mid-fight) and persists across reloads.
 
-Classic is the original renderer, untouched. Pixel mode draws each fighter into a small offscreen
+Classic is the original renderer. Pixel mode draws each fighter into a small offscreen
 canvas at reduced native resolution (outlined, 2-tone shaded, blocky limbs/circles) and composites
 it back scaled up with nearest-neighbor upscaling — that low-res-buffer step is what actually
 produces hard pixel-stepped edges; grid-snapping coordinates alone doesn't, since Canvas2D always
@@ -133,7 +133,7 @@ rendered as lit, rounded WebGL geometry — still procedurally generated at runt
 model files, no textures, no external libraries. The camera is fixed and frontal, matching
 the exact framing Classic/Pixel already use, so HUD placement and hit timing never
 change — only how everything looks. If a device's browser doesn't support WebGL, this
-option is silently left out of the cycle and the game behaves exactly as it always has.
+option is silently left out of the cycle, and the game behaves as if this option weren't available.
 
 During a 3D fight, a third button appears next to ⛶/⌂ (⚡ Performance / ✨ Eye Candy) to
 trade rendering quality for smoothness on phones and slower machines — lower-resolution
@@ -145,9 +145,9 @@ across reloads, same as the GFX mode itself.
 
 A flag button sits in the top-right of the main menu. Click it to expand a list of the other 5
 flags; picking one switches every UI string (menus, HUD, Controls, Create Fighter, the on-screen
-touch pad, etc.) and persists across reloads. The default is auto-detected from the browser's
+touchpad, etc.) and persists across reloads. The default is auto-detected from the browser's
 language (`navigator.languages`, matched against the 6 supported codes, falling back to English).
-Fighter names and special-move names are **not** translated — they're Japanese loanwords by
+Fighter names and special-move names are **not** translated — they're often Japanese loanwords by
 design and stay as authored in `CHARACTERS` regardless of UI language.
 
 Translations live in `I18N` in `game-logic.js` (a key-major dictionary — one row per string, all
@@ -161,7 +161,7 @@ English source, and neither should ever overflow or collide with a neighboring l
 ## CPU opponent (1-Player mode)
 
 1-Player now always shows a second **"Choose CPU Opponent"** select screen after you pick your own
-fighter — pick anyone in the roster (built-in or custom), or hit **🎲 Random CPU** for the old
+fighter — pick anyone in the roster (built-in or custom), or hit **🎲 Random CPU** for the
 random-pick behavior.
 
 ## Shared roster & highscores (optional)
@@ -176,7 +176,7 @@ default. Filling in `config.js` turns on two extra features, backed by a free
 - **Tournament + retro highscore list** — main menu → **TOURNAMENT**: beat every other character
   in the roster in sequence, one 120-second round each, with your own published-or-not fighter as
   the final boss. Score = `(fighters beaten × 100) + (seconds left in each match you won)`. Submit
-  your run's score under a name and it appears on the shared, persistent **HIGH SCORES** list.
+  your run's score under a name, and it appears on the shared, persistent **HIGH SCORES** list.
 
 No login: each browser gets one anonymous identity (a Supabase-managed session, invisible to you)
 that owns its own published fighter and can submit scores. Writes are gated by an (almost always
@@ -209,10 +209,11 @@ public write endpoints resist scripted spam.
    the comments in that file for why). Reload the game; the Publish button and Tournament/High
    Scores features light up automatically.
 
-Leave `config.js` blank (its default) to keep playing fully offline/local, exactly as before this
-section existed.
+Leave `config.js` blank (its default) to keep playing fully offline/local.
 
 ## Credits
 
-Branding: *The Chosen Ones — Zen Bu Kan Kempo*. Music and sound effects are generated at runtime
+Branding: [The Chosen Ones — Zen Bu Kan Kempo](https://tcokempo.hu/).
+Music and sound effects are generated at runtime
 with the Web Audio API (original chiptune, no copyrighted material).
+Code: Peter Kaszt - 2026 (With the help of Claude.)
