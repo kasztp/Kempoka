@@ -142,11 +142,120 @@ function boxScaleMatrix(x,y,z, sx,sy,sz){
   return new Float32Array([sx,0,0,0,  0,sy,0,0,  0,0,sz,0,  x,y,z,1]);
 }
 
+// ---------- WebGL bootstrap (browser-only; never exercised by the Node unit tests) ---
+let gl=null, prog=null, meshes={};
+let uModel, uProjection, uColor, uLightDir, uFogColor, uFogNear, uFogFar, aPosition, aNormal;
+let projectionMatrix=null;
+
+const QUALITY3D = {
+  eyecandy:    { segments:12, dpr:(typeof window!=='undefined' ? Math.min(window.devicePixelRatio||1,2) : 1), particleScale:1 },
+  performance: { segments:6,  dpr:1, particleScale:0.4 },
+};
+let quality3D = (typeof localStorage!=='undefined' && localStorage.kmp_quality==='performance') ? 'performance' : 'eyecandy';
+
+function getQuality3D(){ return quality3D; }
+function setQuality3D(name){
+  quality3D = name;
+  if(typeof localStorage!=='undefined') localStorage.kmp_quality = name;
+  if(gl){ buildMeshes(QUALITY3D[quality3D].segments); resize3D(); }
+}
+
+function has3DSupport(){ return !!gl; }
+
+const VERTEX_SRC = `
+attribute vec3 aPosition;
+attribute vec3 aNormal;
+uniform mat4 uModel;
+uniform mat4 uProjection;
+varying vec3 vNormal;
+varying float vDepth;
+void main(){
+  vec4 world = uModel * vec4(aPosition, 1.0);
+  vNormal = normalize((uModel * vec4(aNormal, 0.0)).xyz);
+  vDepth = world.z;
+  gl_Position = uProjection * world;
+}`;
+
+const FRAGMENT_SRC = `
+precision mediump float;
+varying vec3 vNormal;
+varying float vDepth;
+uniform vec3 uColor;
+uniform vec3 uLightDir;
+uniform vec3 uFogColor;
+uniform float uFogNear;
+uniform float uFogFar;
+void main(){
+  float diff = max(dot(normalize(vNormal), uLightDir), 0.0);
+  float band = floor(diff * 3.0) / 3.0;
+  float lit = 0.55 + band * 0.55;
+  vec3 shaded = uColor * lit;
+  float fog = clamp((vDepth - uFogNear) / (uFogFar - uFogNear), 0.0, 1.0);
+  gl_FragColor = vec4(mix(shaded, uFogColor, fog), 1.0);
+}`;
+
+function compileShader(type, src){
+  const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)){ console.error(gl.getShaderInfoLog(s)); return null; }
+  return s;
+}
+
+function uploadMesh(data){
+  const vbuf=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vbuf); gl.bufferData(gl.ARRAY_BUFFER, data.verts, gl.STATIC_DRAW);
+  const nbuf=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, nbuf); gl.bufferData(gl.ARRAY_BUFFER, data.norms, gl.STATIC_DRAW);
+  const ibuf=gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibuf); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, data.idx, gl.STATIC_DRAW);
+  return {vbuf, nbuf, ibuf, count: data.idx.length};
+}
+
+function buildMeshes(segments){
+  meshes.sphere = uploadMesh(buildSphere(segments));
+  meshes.cylinder = uploadMesh(buildCylinder(segments));
+  meshes.quadFloor = uploadMesh(buildQuadFloor());
+  meshes.quadWall = uploadMesh(buildQuadWall());
+}
+
+function resize3D(){
+  const canvas = gl.canvas, dpr = QUALITY3D[quality3D].dpr;
+  canvas.width = R3D_W*dpr; canvas.height = R3D_H*dpr;
+  gl.viewport(0,0,canvas.width,canvas.height);
+}
+
+// ponytail: no gl.enable(CULL_FACE) — our meshes are simple closed/near-closed shapes
+// (sphere, cylinder sides, single-sided quads) with the depth buffer already sorting
+// overlap correctly; culling would save a little fill rate but risks invisible geometry
+// if a mesh generator's winding order is ever wrong. Not worth that failure mode here.
+function init3D(canvas){
+  try{ gl = canvas.getContext('webgl2') || canvas.getContext('webgl'); }catch(e){ gl=null; }
+  if(!gl) return false;
+  const vs=compileShader(gl.VERTEX_SHADER, VERTEX_SRC), fs=compileShader(gl.FRAGMENT_SHADER, FRAGMENT_SRC);
+  if(!vs||!fs){ gl=null; return false; }
+  prog = gl.createProgram(); gl.attachShader(prog,vs); gl.attachShader(prog,fs); gl.linkProgram(prog);
+  if(!gl.getProgramParameter(prog, gl.LINK_STATUS)){ gl=null; return false; }
+  gl.useProgram(prog);
+  aPosition = gl.getAttribLocation(prog,'aPosition');
+  aNormal = gl.getAttribLocation(prog,'aNormal');
+  uModel = gl.getUniformLocation(prog,'uModel');
+  uProjection = gl.getUniformLocation(prog,'uProjection');
+  uColor = gl.getUniformLocation(prog,'uColor');
+  uLightDir = gl.getUniformLocation(prog,'uLightDir');
+  uFogColor = gl.getUniformLocation(prog,'uFogColor');
+  uFogNear = gl.getUniformLocation(prog,'uFogNear');
+  uFogFar = gl.getUniformLocation(prog,'uFogFar');
+  gl.enable(gl.DEPTH_TEST);
+  projectionMatrix = mat4Ortho(0, R3D_W, R3D_H, 0, -80, 500);   // bottom=R3D_H,top=0 deliberately flips Y to canvas convention
+  buildMeshes(QUALITY3D[quality3D].segments);
+  resize3D();
+  const [lx,ly,lz] = normalize3(-0.4,-0.7,-0.5);
+  gl.uniform3f(uLightDir, lx,ly,lz);
+  return true;
+}
+
 const exportsObj = {
   mat4Identity, mat4Multiply, mat4Ortho, normalize3, hexToRgb01,
   buildSphere, buildCylinder, buildQuadFloor, buildQuadWall,
   pointMatrix, boneMatrix, boxScaleMatrix,
   R3D_W, R3D_H, R3D_GROUND,
+  has3DSupport, init3D, getQuality3D, setQuality3D,
 };
 
 if(typeof module!=='undefined' && module.exports){ module.exports = exportsObj; }
