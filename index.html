@@ -101,6 +101,16 @@ const cv3d = document.getElementById('cv3d');
 init3D(cv3d);
 const W = 960, H = 540, GROUND = 476, INK = '#1a1a1a';
 
+// cv's backing store defaulted to exactly 960x540 physical pixels, CSS-stretched to fill
+// the viewport (object-fit:contain) — on a high-DPI display that's a big upscale with no
+// extra resolution to work with, reading as blurry. Sizing the backing store by
+// devicePixelRatio (capped at 2x, matching the cap already used for the 3D quality
+// preset in render3d.js) and scaling the context once here means every existing draw
+// call below keeps working in the same 960x540 logical coordinates, unchanged.
+const DPR = Math.min(window.devicePixelRatio||1, 2);
+cv.width = W*DPR; cv.height = H*DPR;
+ctx.scale(DPR, DPR);
+
 // `canvas{width:100%;height:100%;object-fit:contain}` means the element's box (from
 // getBoundingClientRect) is often bigger than the actual rendered 960x540 content whenever the
 // viewport/window isn't exactly 16:9 (any 16:10 laptop, most fullscreen monitors) — the difference
