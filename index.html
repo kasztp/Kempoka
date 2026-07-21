@@ -184,7 +184,10 @@ const touch={};
 let touchMode = localStorage.kmp_touch || 'auto';   // 'auto' | 'on' | 'off'
 let graphicsStyle = localStorage.kmp_graphics || 'classic';   // 'classic' | 'pixel' | '3d'
 if(graphicsStyle==='3d' && !has3DSupport()) graphicsStyle='classic';   // device can't do it — fall back silently
-function applyGraphicsStyle(){ cv.style.imageRendering = graphicsStyle==='pixel' ? 'pixelated' : 'auto'; }
+function applyGraphicsStyle(){
+  cv.style.imageRendering = graphicsStyle==='pixel' ? 'pixelated' : 'auto';
+  cv.style.background = graphicsStyle==='3d' ? 'transparent' : '';
+}
 function toggleGraphicsStyle(){
   const order = has3DSupport() ? ['classic','pixel','3d'] : ['classic','pixel'];
   graphicsStyle = order[(order.indexOf(graphicsStyle)+1) % order.length];

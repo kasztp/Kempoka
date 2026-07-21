@@ -208,6 +208,10 @@ function uploadMesh(data){
 }
 
 function buildMeshes(segments){
+  ['sphere','cylinder','quadFloor','quadWall'].forEach(name=>{
+    const m = meshes[name];
+    if(m){ gl.deleteBuffer(m.vbuf); gl.deleteBuffer(m.nbuf); gl.deleteBuffer(m.ibuf); }
+  });
   meshes.sphere = uploadMesh(buildSphere(segments));
   meshes.cylinder = uploadMesh(buildCylinder(segments));
   meshes.quadFloor = uploadMesh(buildQuadFloor());
@@ -308,7 +312,7 @@ function draw3DFighter(f,h,c,pose,g,hip,sh,head,headR,fFoot,bFoot,fHand,bHand,fK
   // legs (front leg bends at the knee for kicks, exactly like drawFighterClassic)
   if(fKneeW){ bone(hipW,fKneeW,legR,pantsColor); bone(fKneeW,fFootW,legR*0.9,pantsColor); }
   else bone(hipW,fFootW,legR,pantsColor);
-  bone(hipW,bFootW,legR,pantsColor);
+  bone(hipW,bFootW,legR,shade3(pantsColor,-0.15));
   // back arm, torso, front arm (same draw order as Classic: back arm first so the torso
   // partially occludes its shoulder end)
   bone(shW,bHandW,armR,shade3(topColor,-0.15));
@@ -358,7 +362,7 @@ function stageBamboo3D(t){
   draw3D('quadWall', boxScaleMatrix(R3D_W/2, 0, 280, R3D_W, R3D_GROUND, 1), 0.23,0.20,0.13);
   DECOR.bamboo.slice(0,9).forEach(b=>{
     const sway = Math.sin(t*0.8+b.ph)*6;
-    bone([b.x+sway,R3D_GROUND,180], [b.x,b.top,180], Math.max(2,b.w*0.5), [0.33,0.42,0.20]);
+    bone([b.x,R3D_GROUND,180], [b.x+sway,b.top,180], Math.max(2,b.w*0.5), [0.33,0.42,0.20]);
   });
   [110,850].forEach(lx=>{
     bone([lx,R3D_GROUND-30,60],[lx,R3D_GROUND-52,60], 12, [0.54,0.54,0.50]);
