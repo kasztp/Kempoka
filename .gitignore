@@ -14,3 +14,9 @@ supabase/.branches/
 # Editors
 .vscode/
 .idea/
+
+# Superpowers workflow artifacts — isolated worktrees and task-tracking/review scratch
+# created while implementing a plan. Process artifacts, not project docs (those live
+# under docs/superpowers/ and are committed on purpose).
+.claude/worktrees/
+.superpowers/

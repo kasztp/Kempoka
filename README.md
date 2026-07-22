@@ -4,6 +4,13 @@ A Street Fighter–style 2D fighting game themed around **Zen Bu Kan Kempo**. Ru
 browser on desktop (keyboard) or phone/tablet (touch). No dependencies, no build step —
 `index.html` is everything a player needs.
 
+**Working on the code?** See [`docs/`](docs/) for how it's built: [`game_logic.md`](docs/game_logic.md)
+(belts, roster, combat math, i18n data), [`2D_rendering.md`](docs/2D_rendering.md) (Classic/Pixel
+canvas renderers), [`3D_rendering.md`](docs/3D_rendering.md) (the WebGL `GFX: 3D` mode),
+[`UI.md`](docs/UI.md) (screens, menus, input, HUD), and [`backend.md`](docs/backend.md) (the
+optional Supabase shared-roster/highscores layer). [`CLAUDE.md`](CLAUDE.md) is a quick-start map
+for agents working in this repo.
+
 ## Run it
 
 Just open `index.html` in a browser — double-click it, or serve the folder:
@@ -14,18 +21,14 @@ python3 -m http.server 8000   # then visit http://localhost:8000
 
 ## Tests
 
-Belts, roster, move tables, and combat math (`computeDamage`, `moveDir`, `getBelt`, etc.) live in
-`game-logic.js` — a small DOM-free module loaded by `index.html` via `<script src>` and also
-`require()`-able directly from Node, which is what makes it unit-testable without a browser.
-Everything canvas/DOM-dependent (rendering, input, audio, the game loop) stays in `index.html`.
-
 ```
 npm test   # node --test — zero dependencies, uses Node's built-in test runner
 ```
 
 `.github/workflows/ci.yml` runs the same command on every push/PR. There's also an in-browser
 smoke check: append `?test=1` to the URL for a quick visual PASS/FAIL badge covering the same
-combat math plus a live `CharacterStore` round-trip.
+combat math plus a live `CharacterStore` round-trip. See [`docs/game_logic.md`](docs/game_logic.md)
+for what's covered and why the core logic is unit-testable without a browser at all.
 
 ## Controls
 
@@ -68,21 +71,22 @@ procedurally — no image assets.
 
 ## Belt ranks
 
-Belts are a shared rank table (`KYU_RANKS`/`DAN_RANKS` in `game-logic.js`), not per-character colors:
-12th Kyu (White) up through 1st Kyu (Brown, black stripe), then Dan grades (Black). Some kyu grades
-carry a stripe or tip accent (e.g. 6th Kyu = Purple with a brown tip). A gi-wearing fighter's uniform
-follows rank automatically: **below Blue Belt** (White/Yellow/Orange/Green) wears **white pants with
-a black top**; **Blue Belt and above** (including all Dan grades) is **fully black**. Any Dan-ranked
-fighter (gi or spandex/rashguard) also wears a thin gold necklace with a small round pendant.
+Belts are a shared rank table, not per-character colors: 12th Kyu (White) up through 1st Kyu
+(Brown, black stripe), then Dan grades (Black). Some kyu grades carry a stripe or tip accent (e.g.
+6th Kyu = Purple with a brown tip). A gi-wearing fighter's uniform follows rank automatically:
+**below Blue Belt** (White/Yellow/Orange/Green) wears **white pants with a black top**; **Blue
+Belt and above** (including all Dan grades) is **fully black**. Any Dan-ranked fighter (gi or
+spandex/rashguard) also wears a thin gold necklace with a small round pendant. Full rank table and
+data shape: [`docs/game_logic.md`](docs/game_logic.md).
 
 ## Adding a character
 
 Every built-in fighter is one object in the `CHARACTERS` array in `game-logic.js`. Copy
-an existing entry, change the fields (name, `beltRank` — an ID from the belt table above, or `null`
+an existing entry, change the fields (name, belt rank — an ID from the belt table above, or `null`
 for no belt — outfit, build, hair/beard, stats, special), and it shows up in character select
 automatically, belt and gi colors included — the grid pages to fit any number. A brand-new kind of
 special needs a matching `case` in `doSpecial()`; reusing an existing special type needs no code
-changes.
+changes. Full field-by-field reference: [`docs/game_logic.md`](docs/game_logic.md).
 
 ## Create Fighter (in-game)
 
@@ -94,13 +98,11 @@ master" look. **🎲 Randomize** fills the whole form for a quick-generated figh
 appear in every fighter-select screen alongside the built-ins (with a small badge), and can be
 edited or deleted from the **Create Fighter** screen's "My Fighters" list.
 
-Custom fighters are saved via `CharacterStore` (`game-logic.js`), backed by `localStorage` —
-**per-browser only, not shared between players**, and that stays true by design: you can keep as
-many local/private fighters as you like. The store's `list()/save()/remove()` all return Promises
-even though `localStorage` itself is synchronous, specifically so it was a drop-in swap for a
-`fetch()`-based cloud API later — which is exactly what happened, as an *addition* rather than a
-replacement: see **Shared roster & highscores** below for `SharedStore`, the optional layer that
-lets you publish exactly one of these local fighters for other players to see and fight.
+Custom fighters are saved locally (`localStorage`) — **per-browser only, not shared between
+players** by default, and that stays true unless you opt in: see **Shared roster & highscores**
+below for publishing one to other players. Implementation details (the `draft` object, the
+DOM-input overlay for text/color fields, the local `CharacterStore`): [`docs/UI.md`](docs/UI.md)
+and [`docs/game_logic.md`](docs/game_logic.md).
 
 ## Fullscreen / exit to menu
 
@@ -109,37 +111,25 @@ enter fullscreen (hides the browser chrome/URL bar) via the standard Fullscreen 
 (⤫) to exit. Not shown on browsers that don't support element fullscreen (notably iPhone Safari —
 iPadOS, desktop, and Android browsers are fine). **⌂** appears only during a match — click it to
 abandon the fight and return to the main menu immediately, no confirmation (same as the result
-screen's "Main Menu" button). The HP bars are inset from the screen edges (`HUD_MARGIN` in
-`index.html`) specifically so these buttons never sit on top of them, at any window size.
+screen's "Main Menu" button). Implementation (the HUD-margin layout guarantee that keeps these off
+the HP bars at any window size): [`docs/UI.md`](docs/UI.md).
 
 ## Graphics style — Classic / HD Pixel toggle
 
-Main menu, next to MUSIC/SFX: **GFX: CLASSIC / GFX: PIXEL** switches the whole game's rendering
-between the original smooth vector look and a **HD retro pixel-art** style — both
-procedurally generated at runtime, no sprite assets, no new dependencies. The switch is instant
-(theoretically works mid-fight) and persists across reloads.
+Main menu, next to MUSIC/SFX: **GFX** cycles between three rendering styles, all procedurally
+generated at runtime — no sprite/model assets, no textures, no new dependencies. The switch is
+instant and persists across reloads.
 
-Classic is the original renderer. Pixel mode draws each fighter into a small offscreen
-canvas at reduced native resolution (outlined, 2-tone shaded, blocky limbs/circles) and composites
-it back scaled up with nearest-neighbor upscaling — that low-res-buffer step is what actually
-produces hard pixel-stepped edges; grid-snapping coordinates alone doesn't, since Canvas2D always
-antialiases vector fills/strokes/clips regardless of coordinate rounding. The 4 stage backgrounds
-get a parallel pixel-art treatment too (banded gradients instead of smooth ones, blocky outlined
-props), so the fighters and the world read as one consistent style. See `PIXEL_BUF_SCALE`/`PX` in
-`index.html` to tune chunkiness.
+- **Classic** — the original smooth vector look.
+- **Pixel** — a chunky HD retro pixel-art style; fighters and the 4 stage backgrounds both get the
+  same blocky treatment, so they read as one consistent style.
+- **3D** — the same fighters and stages as lit, rounded WebGL geometry, framed with a fixed camera
+  matching Classic/Pixel exactly, so HUD placement and hit timing never change — only how
+  everything looks. Silently left out of the cycle on devices without WebGL support. A fight-only
+  ⚡ Performance / ✨ Eye Candy toggle trades rendering quality for smoothness on slower devices.
 
-Main menu → **GFX** cycles a third time into **3D**: the same fighters and stages,
-rendered as lit, rounded WebGL geometry — still procedurally generated at runtime, no
-model files, no textures, no external libraries. The camera is fixed and frontal, matching
-the exact framing Classic/Pixel already use, so HUD placement and hit timing never
-change — only how everything looks. If a device's browser doesn't support WebGL, this
-option is silently left out of the cycle, and the game behaves as if this option weren't available.
-
-During a 3D fight, a third button appears next to ⛶/⌂ (⚡ Performance / ✨ Eye Candy) to
-trade rendering quality for smoothness on phones and slower machines — lower-resolution
-rendering and simpler meshes vs. full detail. It only appears in 3D mode, since Classic
-and Pixel already draw at the same fixed cost regardless of device. Your choice persists
-across reloads, same as the GFX mode itself.
+How each renderer actually works: [`docs/2D_rendering.md`](docs/2D_rendering.md) (Classic/Pixel)
+and [`docs/3D_rendering.md`](docs/3D_rendering.md) (3D).
 
 ## Language — EN / DE / ES / IT / FR / HU
 
@@ -150,13 +140,11 @@ language (`navigator.languages`, matched against the 6 supported codes, falling 
 Fighter names and special-move names are **not** translated — they're often Japanese loanwords by
 design and stay as authored in `CHARACTERS` regardless of UI language.
 
-Translations live in `I18N` in `game-logic.js` (a key-major dictionary — one row per string, all
-6 languages inline — so a missing translation is easy to spot while editing a row) alongside the
-lookup function `t(lang, key)` and `detectDefaultLang(languages)`. A unit test asserts every key
-has a non-empty value for every supported language, so an incomplete row fails `npm test` rather
-than shipping silently. Button labels auto-shrink their font to fit (`drawBtn`), and longer fixed
-lines use the `fitText()` helper for the same reason — a translation can be much longer than its
-English source, and neither should ever overflow or collide with a neighboring label.
+A unit test asserts every string has a non-empty value for every supported language, so an
+incomplete translation fails `npm test` rather than shipping silently. Button labels and longer
+fixed lines auto-shrink their font to fit, since a translation can be much longer than its English
+source. Data layout: [`docs/game_logic.md`](docs/game_logic.md). UI consumption/auto-shrink:
+[`docs/UI.md`](docs/UI.md).
 
 ## CPU opponent (1-Player mode)
 
@@ -183,33 +171,10 @@ that owns its own published fighter and can submit scores. Writes are gated by a
 invisible) [Cloudflare Turnstile](https://developers.cloudflare.com/turnstile/) challenge so the
 public write endpoints resist scripted spam.
 
-### Setup
-
-1. **Create a Supabase project** (free tier is enough) at [supabase.com](https://supabase.com).
-2. **Run the schema**: Project → SQL Editor → paste in [`supabase-schema.sql`](supabase-schema.sql)
-   → Run. This creates the `characters`/`scores` tables with read-only row-level security — direct
-   writes are denied by design; see the file's comments for why.
-3. **Enable Anonymous sign-ins**: Project Settings → Authentication → Providers → toggle on
-   "Anonymous Sign-Ins".
-4. **Create a Cloudflare Turnstile widget**: [Cloudflare dashboard](https://dash.cloudflare.com) →
-   Turnstile → Add site (any widget mode). Note its **Site Key** and **Secret Key**.
-5. **Deploy the write gateway** (a Supabase Edge Function — the only path that's allowed to write;
-   see [`supabase/functions/kempoka-write/index.ts`](supabase/functions/kempoka-write/index.ts) for
-   what it does and why):
-   ```
-   supabase functions deploy kempoka-write --project-ref <your-project-ref>
-   supabase secrets set TURNSTILE_SECRET_KEY=<Turnstile secret> --project-ref <your-project-ref>
-   ```
-   That's the only secret to set by hand — `SUPABASE_URL` and the project's publishable/secret
-   keys are auto-injected for every Edge Function. (Supabase is retiring the legacy `anon`/
-   `service_role` keys in favor of **Publishable**/**Secret** keys; the function picks up
-   whichever your project has configured.)
-6. **Fill in [`config.js`](config.js)** with your project's URL, its **Publishable** key (Project
-   Settings → API Keys), and the Turnstile **Site** Key (all three are meant to be public — see
-   the comments in that file for why). Reload the game; the Publish button and Tournament/High
-   Scores features light up automatically.
-
-Leave `config.js` blank (its default) to keep playing fully offline/local.
+Leave `config.js` blank (its default) to keep playing fully offline/local. To stand up your own
+backend — Supabase project, schema, anonymous auth, Turnstile widget, the `kempoka-write` Edge
+Function, and `config.js` — follow the full deployment walkthrough in
+[`docs/backend.md`](docs/backend.md).
 
 ## Credits
 
